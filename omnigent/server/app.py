@@ -1629,13 +1629,12 @@ def create_app(
     # reaching the metrics counter (which only counts on accept anyway).
     app.add_middleware(WebSocketOriginMiddleware)
 
-    # Prof nonce-auth middleware: intercepts ?t={nonce} before any route,
-    # validates against the prof backend, sets the session cookie, and
-    # redirects to strip the nonce.  No-op when the required env vars are
-    # unset (the factory returns None).
-    from omnigent.server.prof_auth import create_prof_auth as _create_prof_auth
+    # Prof nonce gate: intercepts ?t={nonce} before any route, validates
+    # against the prof backend, and redirects to strip the nonce.  No-op
+    # when env vars are unset — omnigent runs with no auth at all.
+    from omnigent.server.prof_auth import create_prof_middleware as _create_prof_mw
 
-    _prof_provider, _prof_mw_cls, _prof_mw_kwargs = _create_prof_auth()
+    _prof_mw_cls, _prof_mw_kwargs = _create_prof_mw()
     if _prof_mw_cls is not None:
         app.add_middleware(_prof_mw_cls, **_prof_mw_kwargs)
     # Give the tool-policy ASK gate (which forwards the native-terminal

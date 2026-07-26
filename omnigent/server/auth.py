@@ -692,21 +692,10 @@ def create_auth_provider() -> AuthProvider:
     """
     source = resolve_auth_source()
 
-    if source not in ("header", "oidc", "accounts", "prof"):
+    if source not in ("header", "oidc", "accounts"):
         raise RuntimeError(
-            f"Unknown OMNIGENT_AUTH_PROVIDER={source!r}. Valid: 'header', 'oidc', 'accounts', 'prof'"
+            f"Unknown OMNIGENT_AUTH_PROVIDER={source!r}. Valid: 'header', 'oidc', 'accounts'"
         )
-
-    if source == "prof":
-        from omnigent.server.prof_auth import create_prof_auth
-
-        provider, _, _ = create_prof_auth()
-        if provider is None:
-            raise RuntimeError(
-                "OMNIGENT_AUTH_PROVIDER=prof requires OMNIGENT_BACKEND_URL, "
-                "OMNIGENT_VM_ID, and OMNIGENT_PROF_COOKIE_SECRET"
-            )
-        return provider
 
     oidc_config: OIDCConfig | None = None
     accounts_config: AccountsConfig | None = None
