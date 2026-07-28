@@ -77,8 +77,15 @@ class ProfNonceMiddleware(BaseHTTPMiddleware):
         logger.info("prof-nonce: validated ok  vm=%s", self._vm_id)
 
         # Redirect to same URL without ?t= (strips nonce from history).
-        redirect_url = str(request.url.remove_query_params("t"))
-        return RedirectResponse(url=redirect_url, status_code=302)
+        # Cloudflare terminates TLS and cloudflared forwards to
+        # http://localhost:8080, so request.url carries the http scheme.
+        # Redirecting an https-embedded iframe to http is blocked as mixed
+        # content, leaving the frame blank.
+        redirect_url = request.url.remove_query_params("t")
+        proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
+        if proto:
+            redirect_url = redirect_url.replace(scheme=proto)
+        return RedirectResponse(url=str(redirect_url), status_code=302)
 
 
 # ── Factory ───────────────────────────────────────────────────────────
