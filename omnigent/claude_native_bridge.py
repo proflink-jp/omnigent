@@ -862,13 +862,68 @@ def prepare_bridge_dir(
     return bridge_dir
 
 
-def ensure_claude_workspace_trusted(workspace: Path) -> None:
+def resolve_claude_global_config_path(
+    config_dir: str | Path | None = None,
+) -> Path:
+    """
+    Resolve Claude Code's global config file path (trust / onboarding).
+
+    Mirrors Claude Code's own resolution (``cv()`` in the CLI binary,
+    verified against 2.1.x):
+
+    1. Effective config dir = *config_dir*, else ``$CLAUDE_CONFIG_DIR``,
+       else unset.
+    2. If ``<claudeDir>/.config.json`` exists (where *claudeDir* is the
+       effective config dir, or ``~/.claude`` when unset), use that.
+    3. Else ``$CLAUDE_CONFIG_DIR/.claude.json`` when the config dir is
+       set, otherwise ``~/.claude.json``.
+
+    Without step 1–3, hosts that pin ``CLAUDE_CONFIG_DIR`` (prof-dev
+    bakes credentials under ``~/claude-accs/.claude-prof-{yo,nana}``)
+    seed trust into ``~/.claude.json`` while Claude reads
+    ``$CLAUDE_CONFIG_DIR/.claude.json`` — the folder-trust dialog then
+    blocks the TUI and the ready gate times out.
+
+    :param config_dir: Optional explicit Claude config directory (same
+        meaning as ``CLAUDE_CONFIG_DIR`` / agent
+        ``executor.config.claude_config_dir``). Empty/whitespace is
+        ignored so callers can pass through unvalidated env values.
+    :returns: Absolute path to the JSON file Claude will load for
+        ``projects`` / ``hasCompletedOnboarding``.
+    """
+    effective: Path | None = None
+    if config_dir is not None:
+        text = str(config_dir).strip()
+        if text:
+            effective = Path(text).expanduser()
+    if effective is None:
+        env = os.environ.get("CLAUDE_CONFIG_DIR")
+        if isinstance(env, str) and env.strip():
+            effective = Path(env.strip()).expanduser()
+
+    # Claude's ``fn()``: settings/credentials tree.
+    claude_dir = effective if effective is not None else Path.home() / ".claude"
+    config_json = claude_dir / ".config.json"
+    if config_json.is_file():
+        return config_json
+
+    # Claude's ``cv()`` joins ``CLAUDE_CONFIG_DIR || homedir`` (not
+    # ``~/.claude``) for the legacy ``.claude.json`` name.
+    base = effective if effective is not None else Path.home()
+    return base / ".claude.json"
+
+
+def ensure_claude_workspace_trusted(
+    workspace: Path,
+    *,
+    config_dir: str | Path | None = None,
+) -> None:
     """
     Pre-accept Claude Code's first-run trust + onboarding prompts.
 
     Claude Code blocks on two TUI prompts the first time it launches in
     a new context: a global onboarding flow (theme / login) gated by the
-    top-level ``hasCompletedOnboarding`` key in ``~/.claude.json``, and a
+    top-level ``hasCompletedOnboarding`` key in its global config, and a
     per-directory "Do you trust the files in this folder?" dialog gated
     by ``projects["<abs cwd>"].hasTrustDialogAccepted``. Neither fires a
     ``PermissionRequest`` hook, so on a host-spawned (web-UI-driven)
@@ -877,8 +932,14 @@ def ensure_claude_workspace_trusted(workspace: Path) -> None:
     per-session git worktrees, which hand Claude a brand-new —
     therefore untrusted — directory on every session.
 
+    The config file path follows Claude Code's own resolution (see
+    :func:`resolve_claude_global_config_path`): when
+    ``CLAUDE_CONFIG_DIR`` or *config_dir* is set (e.g. multi-account
+    ``claude-accs`` trees on prof-dev), trust is written into that
+    tree's ``.claude.json``, not into ``~/.claude.json``.
+
     Seed both gating keys idempotently so the launch never blocks. Only
-    those two keys are written; all other ``~/.claude.json`` state (the
+    those two keys are written; all other global-config state (the
     user's own onboarding choices, project history, MCP config, OAuth
     account) is preserved, and the file is left untouched when both keys
     are already set. This deliberately does NOT skip per-tool permission
@@ -896,15 +957,18 @@ def ensure_claude_workspace_trusted(workspace: Path) -> None:
     :param workspace: The runner workspace Claude will launch in, e.g.
         ``Path("/home/user/repo-worktrees/feature-x")``. Resolved to an
         absolute path to match Claude's ``projects`` key convention.
+    :param config_dir: Optional Claude config directory override (same
+        meaning as ``CLAUDE_CONFIG_DIR``). When ``None``, the process
+        env is consulted; when both are unset, ``~/.claude.json`` is used.
     :returns: None.
-    :raises ValueError: If an existing ``~/.claude.json`` (or its
+    :raises ValueError: If an existing global config file (or its
         ``projects`` map / target project entry) is not a JSON object.
         Surfaced rather than silently overwritten so a corrupt or
         unexpected user config is never clobbered (fail loud).
-    :raises json.JSONDecodeError: If an existing ``~/.claude.json`` is
+    :raises json.JSONDecodeError: If an existing global config file is
         not valid JSON, for the same reason.
     """
-    config_path = Path.home() / ".claude.json"
+    config_path = resolve_claude_global_config_path(config_dir)
     if config_path.exists():
         data = json.loads(config_path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
@@ -936,6 +1000,7 @@ def ensure_claude_workspace_trusted(workspace: Path) -> None:
 
     if not changed:
         return
+    config_path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write_user_json(config_path, data)
 
 

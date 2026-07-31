@@ -43,6 +43,7 @@ from omnigent.claude_native_bridge import (
     read_transcript_items_since,
     read_transcript_path,
     record_hook_event,
+    resolve_claude_global_config_path,
     start_tool_relay,
     stop_hook_seen_since,
     write_tmux_target,
@@ -4798,7 +4799,8 @@ def _redirect_home(monkeypatch: pytest.MonkeyPatch, home: Path) -> Path:
 
     ``Path.home()`` resolves ``~`` via ``$HOME`` on POSIX, so setting the
     env var redirects the helper's reads/writes to *home* without
-    patching any production internals.
+    patching any production internals. Also clears ``CLAUDE_CONFIG_DIR``
+    so ambient host env cannot divert the seed into another tree.
 
     :param monkeypatch: Pytest monkeypatch fixture.
     :param home: Temp directory to use as the fake home, e.g.
@@ -4807,6 +4809,7 @@ def _redirect_home(monkeypatch: pytest.MonkeyPatch, home: Path) -> Path:
     """
     home.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     assert Path.home() == home  # guards against env-resolution surprises
     return home / ".claude.json"
 
@@ -4945,6 +4948,117 @@ def test_ensure_trusted_refuses_malformed_config(
 
     # The original (malformed) bytes are preserved — no clobber occurred.
     assert config_path.read_text() == raw
+
+
+def test_resolve_claude_global_config_path_default_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No config dir → ``~/.claude.json`` (Claude Code default)."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    assert resolve_claude_global_config_path() == home / ".claude.json"
+
+
+def test_resolve_claude_global_config_path_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``$CLAUDE_CONFIG_DIR/.claude.json`` when the env is set."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    acc = tmp_path / "claude-accs" / ".claude-prof-yo"
+    acc.mkdir(parents=True)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(acc))
+    assert resolve_claude_global_config_path() == acc / ".claude.json"
+
+
+def test_resolve_claude_global_config_path_explicit_overrides_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit *config_dir* wins over the process env (yo vs nana)."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    yo = tmp_path / "yo"
+    nana = tmp_path / "nana"
+    yo.mkdir()
+    nana.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(yo))
+    assert resolve_claude_global_config_path(nana) == nana / ".claude.json"
+
+
+def test_resolve_claude_global_config_path_prefers_config_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When ``.config.json`` exists under the Claude dir, use that file."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    acc = tmp_path / "acc"
+    acc.mkdir()
+    (acc / ".config.json").write_text("{}")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(acc))
+    assert resolve_claude_global_config_path() == acc / ".config.json"
+
+
+def test_ensure_trusted_writes_under_claude_config_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Trust is seeded under ``CLAUDE_CONFIG_DIR``, not ``~/.claude.json``.
+
+    prof-dev bakes credentials into ``claude-accs/.claude-prof-*`` and
+    launches Claude with ``CLAUDE_CONFIG_DIR`` pointed there. Seeding
+    only ``~/.claude.json`` leaves the folder-trust dialog up and the
+    ready gate times out.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    acc = tmp_path / "claude-accs" / ".claude-prof-yo"
+    acc.mkdir(parents=True)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(acc))
+
+    workspace = tmp_path / "opt" / "prof"
+    workspace.mkdir(parents=True)
+    ensure_claude_workspace_trusted(workspace)
+
+    home_config = home / ".claude.json"
+    acc_config = acc / ".claude.json"
+    assert not home_config.exists(), "must not seed the default home path"
+    data = json.loads(acc_config.read_text())
+    assert data["hasCompletedOnboarding"] is True
+    assert data["projects"][str(workspace.resolve())]["hasTrustDialogAccepted"] is True
+
+
+def test_ensure_trusted_explicit_config_dir_param(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Agent-pinned config dir is written even when env points elsewhere."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    yo = tmp_path / "yo"
+    nana = tmp_path / "nana"
+    yo.mkdir()
+    nana.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(yo))
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    ensure_claude_workspace_trusted(workspace, config_dir=nana)
+
+    assert not (yo / ".claude.json").exists()
+    data = json.loads((nana / ".claude.json").read_text())
+    assert data["projects"][str(workspace.resolve())]["hasTrustDialogAccepted"] is True
 
 
 def test_display_cost_approval_popup_builds_detached_tmux_command(

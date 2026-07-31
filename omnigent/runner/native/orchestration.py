@@ -5523,7 +5523,12 @@ async def _auto_create_claude_terminal(
     # (web-UI-driven) session they would hang Claude in its terminal with
     # nothing shown in the UI. Acute with per-session worktrees,
     # which launch Claude in a brand-new, untrusted directory.
-    ensure_claude_workspace_trusted(Path(workspace))
+    # Pass the same config dir the terminal will use (agent pin, else
+    # $CLAUDE_CONFIG_DIR) so trust lands in the file Claude actually reads.
+    ensure_claude_workspace_trusted(
+        Path(workspace),
+        config_dir=_claude_config_dir_from_spec(agent_spec),
+    )
 
     from omnigent.runner._entry import _make_auth_token_factory, _RunnerDatabricksAuth
 
