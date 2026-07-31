@@ -6,6 +6,14 @@ Rules (docs/dev-env.md Auth):
 2. Iframe only; parent origin must be production prof-cy (`https://cy.prof.link`).
 3. Nonce validates a one-shot session; after success a cookie keeps the iframe alive.
 
+First-party non-browser clients (host + runner) set
+``Origin: omnigent://internal`` (see :data:`OMNIGENT_INTERNAL_WS_ORIGIN`).
+Those requests skip the iframe/cookie gate so runner HTTP callbacks
+(``POST /v1/runners/{id}/token``, ``GET /v1/sessions/.../agent/contents``,
+tool_dispatch) can reach the app. Browsers cannot set that Origin.
+Downstream routes still enforce their own auth (binding token, session
+auth provider, or open single-user when ``OMNIGENT_AUTH_ENABLED=0``).
+
 Environment:
   OMNIGENT_BACKEND_URL  – prod API for nonce validation (required)
   OMNIGENT_VM_ID        – this env's ULID, must match nonce binding (required)
@@ -25,6 +33,8 @@ import httpx
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
+
+from omnigent.runner.identity import OMNIGENT_INTERNAL_WS_ORIGIN
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +67,11 @@ class ProfNonceMiddleware(BaseHTTPMiddleware):
         if any(path.startswith(p) for p in _PUBLIC_PREFIXES):
             return await call_next(request)
 
+        # Host/runner HTTP (mint token, agent bundle, tool callbacks).
+        # Must not require the browser session cookie — see module docstring.
+        if self._is_internal_client(request):
+            return await call_next(request)
+
         nonce = request.query_params.get("t")
         if nonce:
             return await self._handle_nonce(request, nonce)
@@ -69,6 +84,15 @@ class ProfNonceMiddleware(BaseHTTPMiddleware):
             return Response("Unauthorized", status_code=401)
 
         return await call_next(request)
+
+    @staticmethod
+    def _is_internal_client(request: Request) -> bool:
+        """True when the request is from an Omnigent host/runner process.
+
+        :param request: Incoming ASGI request.
+        :returns: Whether ``Origin`` is the first-party sentinel.
+        """
+        return request.headers.get("origin", "") == OMNIGENT_INTERNAL_WS_ORIGIN
 
     def _has_session(self, request: Request) -> bool:
         token = request.cookies.get(_SESSION_COOKIE, "")
