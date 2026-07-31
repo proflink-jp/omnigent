@@ -4710,6 +4710,51 @@ def _claude_native_model_from_spec(agent_spec: AgentSpec | ResolvedSpec | None) 
     return model
 
 
+def _claude_config_dir_from_spec(agent_spec: AgentSpec | ResolvedSpec | None) -> str | None:
+    """
+    Read a per-agent Claude Code config directory from the agent spec.
+
+    Operators pin a credential tree via
+    ``executor.config.claude_config_dir`` (e.g.
+    ``/home/agent/claude-accs/.claude-prof-yo``) so two catalog agents can
+    share harness ``claude-native`` while authenticating as different
+    accounts. When unset, the terminal inherits the host/runner
+    ``CLAUDE_CONFIG_DIR`` (if any).
+
+    :param agent_spec: Agent spec object, or a resolved wrapper carrying a
+        ``spec`` attribute. ``None`` means no spec was available.
+    :returns: Absolute or home-relative config dir path, or ``None``.
+    """
+    spec = agent_spec.spec if isinstance(agent_spec, ResolvedSpec) else agent_spec
+    if spec is None:
+        return None
+    raw = spec.executor.config.get("claude_config_dir")
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    return value or None
+
+
+def _claude_native_terminal_env_for_spec(
+    claude_config: ClaudeNativeUcodeConfig | None,
+    agent_spec: AgentSpec | ResolvedSpec | None,
+) -> dict[str, str]:
+    """
+    Build Claude Code terminal env, including optional per-agent config dir.
+
+    :param claude_config: Optional provider/ucode launch config.
+    :param agent_spec: Session agent spec (may pin ``claude_config_dir``).
+    :returns: Environment overlays for the native Claude terminal process.
+    """
+    from omnigent.claude_native import build_native_claude_terminal_env
+
+    env = build_native_claude_terminal_env(claude_config)
+    config_dir = _claude_config_dir_from_spec(agent_spec)
+    if config_dir is not None:
+        env["CLAUDE_CONFIG_DIR"] = config_dir
+    return env
+
+
 def _cursor_native_model_from_spec(agent_spec: AgentSpec | ResolvedSpec | None) -> str | None:
     """
     Read the cursor-agent model id to launch the native TUI with, from a spec.
@@ -5507,7 +5552,6 @@ async def _auto_create_claude_terminal(
     from omnigent.claude_launcher import resolve_claude_launch
     from omnigent.claude_native import (
         augment_claude_args,
-        build_native_claude_terminal_env,
         resolve_claude_native_model_selection,
         resolve_native_claude_config,
     )
@@ -5794,7 +5838,10 @@ async def _auto_create_claude_terminal(
         # Tool Search env plus ucode gateway env (ANTHROPIC_BASE_URL
         # etc.) when derived. Empty provider config still forces
         # ENABLE_TOOL_SEARCH=true so MCP schemas are loaded on demand.
-        env=build_native_claude_terminal_env(claude_config),
+        # Per-agent ``executor.config.claude_config_dir`` overlays
+        # CLAUDE_CONFIG_DIR so catalog agents can select distinct baked
+        # Claude accounts (e.g. yo vs nana) without a host-wide flip.
+        env=_claude_native_terminal_env_for_spec(claude_config, agent_spec),
         # Names to strip (see ``_claude_terminal_env_unset``). Dropping
         # ``DATABRICKS_CONFIG_PROFILE`` matters because Claude's MCP servers
         # inherit this env and several build ``WorkspaceClient`` without pinning

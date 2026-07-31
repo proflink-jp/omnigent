@@ -267,6 +267,73 @@ describe("useAvailableAgents", () => {
     ]);
   });
 
+  it("keeps distinct claude-native account agents as separate picker rows", async () => {
+    // claude-prof-yo / claude-prof-nana share harness claude-native with the
+    // packaged wrapper but must not collapse into one "Claude Code" row.
+    routeFetch({
+      [BUILTINS_URL]: mockResponse({
+        object: "list",
+        data: [
+          {
+            id: "ag_claude",
+            name: "claude-native-ui",
+            harness: "claude-native",
+            builtin: true,
+          },
+          {
+            id: "ag_yo",
+            name: "claude-prof-yo",
+            description: "Yo account",
+            harness: "claude-native",
+            builtin: true,
+          },
+          {
+            id: "ag_nana",
+            name: "claude-prof-nana",
+            description: "Nana account",
+            harness: "claude-native",
+            builtin: true,
+          },
+        ],
+        has_more: false,
+      }),
+      [SCAN_URL]: EMPTY_SCAN,
+    });
+
+    const { result } = renderHook(() => useAvailableAgents(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data).toEqual([
+      {
+        id: "ag_claude",
+        name: "claude-native-ui",
+        display_name: "Claude Code",
+        description: null,
+        harness: "claude-native",
+        skills: [],
+        builtin: true,
+      },
+      {
+        id: "ag_yo",
+        name: "claude-prof-yo",
+        display_name: "Claude (Yo)",
+        description: "Yo account",
+        harness: "claude-native",
+        skills: [],
+        builtin: true,
+      },
+      {
+        id: "ag_nana",
+        name: "claude-prof-nana",
+        display_name: "Claude (Nana)",
+        description: "Nana account",
+        harness: "claude-native",
+        skills: [],
+        builtin: true,
+      },
+    ]);
+  });
+
   it("defaults a missing harness to null", async () => {
     routeFetch({
       [BUILTINS_URL]: mockResponse({
