@@ -128,4 +128,6 @@ export const AGENT_DISPLAY_NAMES: Record<string, string> = {
   // Prof VM baked Claude accounts (executor.config.claude_config_dir).
   "claude-prof-yo": "Claude (Yo)",
   "claude-prof-nana": "Claude (Nana)",
+  // Prof VM omp (Oh My Pi) agent — headless pi harness, not pi-native.
+  "prof-omp": "OMP",
 };
