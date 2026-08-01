@@ -3205,7 +3205,13 @@ async def _auto_create_kimi_terminal(
     # the workspace-routing header so neither is dropped.
     from omnigent.cli_auth import databricks_request_headers
 
-    _runner_headers = databricks_request_headers(server_url, bearer_token=_auth_token)
+    from omnigent.runner.identity import with_internal_origin
+
+    # Origin sentinel required for ProfNonce on prof dev-env VMs (hook POSTs
+    # are non-browser and have no iframe session cookie).
+    _runner_headers = with_internal_origin(
+        databricks_request_headers(server_url, bearer_token=_auth_token)
+    )
     write_hook_config(
         bridge_dir,
         server_url=server_url,
@@ -3566,9 +3572,12 @@ async def _auto_create_codex_terminal(
     # config (no refresh-capable auth of its own); the helper pairs the bearer
     # with the workspace-routing header so neither is dropped.
     from omnigent.cli_auth import databricks_request_headers
+    from omnigent.runner.identity import with_internal_origin
 
-    policy_headers = databricks_request_headers(
-        launch_config.policy_server_url, bearer_token=_policy_auth_token
+    policy_headers = with_internal_origin(
+        databricks_request_headers(
+            launch_config.policy_server_url, bearer_token=_policy_auth_token
+        )
     )
 
     app_server = build_codex_native_server(
@@ -5550,8 +5559,13 @@ async def _auto_create_claude_terminal(
     # refresh-capable auth of its own); the helper pairs the bearer with the
     # workspace-routing header so neither is dropped.
     from omnigent.cli_auth import databricks_request_headers
+    from omnigent.runner.identity import with_internal_origin
 
-    _runner_headers = databricks_request_headers(server_url, bearer_token=_auth_token)
+    # Origin sentinel: Claude policy/permission hooks POST to the server
+    # without a browser cookie; ProfNonce requires omnigent://internal.
+    _runner_headers = with_internal_origin(
+        databricks_request_headers(server_url, bearer_token=_auth_token)
+    )
     _runner_auth = _RunnerDatabricksAuth(_auth_factory)
 
     from omnigent.claude_launcher import resolve_claude_launch

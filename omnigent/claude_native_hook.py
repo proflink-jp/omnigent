@@ -356,8 +356,10 @@ def _rotate_session_on_clear(bridge_dir: Path) -> str | None:
     ap_server_url = config.get("ap_server_url")
     if not isinstance(ap_server_url, str) or not ap_server_url:
         return None
+    from omnigent.runner.identity import with_internal_origin
+
     raw_headers = config.get("ap_auth_headers")
-    headers = (
+    headers = with_internal_origin(
         {str(key): str(value) for key, value in raw_headers.items()}
         if isinstance(raw_headers, dict)
         else {}
@@ -402,8 +404,10 @@ def _rotate_session_on_fork(bridge_dir: Path) -> str | None:
     ap_server_url = config.get("ap_server_url")
     if not isinstance(ap_server_url, str) or not ap_server_url:
         return None
+    from omnigent.runner.identity import with_internal_origin
+
     raw_headers = config.get("ap_auth_headers")
-    headers = (
+    headers = with_internal_origin(
         {str(key): str(value) for key, value in raw_headers.items()}
         if isinstance(raw_headers, dict)
         else {}
@@ -689,6 +693,10 @@ def _post_hook_with_reattach(
     :returns: The successful (2xx) response, or ``None`` when rejected
         or out of budget — callers fail-ask as before.
     """
+    from omnigent.runner.identity import with_internal_origin
+
+    # ProfNonce on dev-env VMs: permission hooks are non-browser clients.
+    headers = with_internal_origin(headers)
     body = {
         **payload,
         "_omnigent_elicitation_id": f"elicit_claude_{secrets.token_hex(16)}",
@@ -717,7 +725,7 @@ def _post_hook_with_reattach(
                     # evaluate-policy hook and ``_RunnerDatabricksAuth``.
                     refreshed = reauth()
                     if refreshed:
-                        headers = refreshed
+                        headers = with_internal_origin(refreshed)
                         reauthed = True
                         print(
                             f"omnigent {hook_label} hook: Omnigent auth expired "
@@ -1006,10 +1014,14 @@ def _main_evaluate_policy(argv: list[str]) -> int:
     ap_server_url = config.get("ap_server_url")
     if not isinstance(ap_server_url, str) or not ap_server_url:
         return 0
+    from omnigent.runner.identity import with_internal_origin
+
     headers: dict[str, str] = {}
     raw_headers = config.get("ap_auth_headers")
     if isinstance(raw_headers, dict):
         headers = {str(key): str(value) for key, value in raw_headers.items()}
+    # ProfNonce on dev-env VMs: hooks are non-browser; Origin bypasses cookie gate.
+    headers = with_internal_origin(headers)
 
     hook_event = payload.get("hook_event_name", "")
     eval_request = hook_payload_to_evaluation_request(hook_event, payload)

@@ -31,7 +31,11 @@ def _app() -> Starlette:
 async def test_bare_request_without_session_is_unauthorized() -> None:
     transport = ASGITransport(app=_app())
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/v1/sessions")
+        # Server conftest autouse stamps Origin: omnigent://internal when the
+        # header is *absent* (so suite clients look like host/runner). Send an
+        # empty Origin so that stamp is skipped and ProfNonce still rejects
+        # a non-session, non-first-party request.
+        resp = await client.get("/v1/sessions", headers={"Origin": ""})
     assert resp.status_code == 401
     assert resp.text == "Unauthorized"
 

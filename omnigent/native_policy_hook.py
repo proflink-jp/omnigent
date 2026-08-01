@@ -86,8 +86,14 @@ def policy_hook_request_headers() -> dict[str, str]:
     malformed env → just ``Content-Type`` (a local unauthenticated server
     needs no auth).
 
+    Always stamps ``Origin: omnigent://internal`` so ProfNonceMiddleware on
+    prof dev-env VMs treats the hook as a first-party client (browser
+    session cookie is not available to the Claude/Codex hook process).
+
     :returns: Request headers for ``post_evaluate_with_retry``.
     """
+    from omnigent.runner.identity import with_internal_origin
+
     headers = {"Content-Type": "application/json"}
     raw = os.environ.get(_AUTH_HEADERS_ENV, "")
     if raw:
@@ -97,7 +103,7 @@ def policy_hook_request_headers() -> dict[str, str]:
             extra = None
         if isinstance(extra, dict):
             headers.update({str(k): str(v) for k, v in extra.items()})
-    return headers
+    return with_internal_origin(headers)
 
 
 def policy_hook_wrapper_script(server_url: str, session_id: str, hook_script_path: str) -> str:
@@ -118,9 +124,13 @@ def policy_hook_wrapper_script(server_url: str, session_id: str, hook_script_pat
     from omnigent.cli_auth import databricks_request_headers
     from omnigent.runner._entry import _make_auth_token_factory
 
+    from omnigent.runner.identity import with_internal_origin
+
     factory = _make_auth_token_factory(server_url=server_url)
     token = factory() if factory is not None else None
-    auth_headers = databricks_request_headers(server_url, bearer_token=token)
+    auth_headers = with_internal_origin(
+        databricks_request_headers(server_url, bearer_token=token)
+    )
     return (
         "#!/bin/sh\n"
         f"export _OMNIGENT_SERVER_URL={shlex.quote(server_url)}\n"
@@ -175,7 +185,9 @@ class PolicyHookReauth:
             self.failure_reason = "auth factory returned empty token"
             return None
         self.failure_reason = None
-        return {**self._headers, "Authorization": f"Bearer {token}"}
+        from omnigent.runner.identity import with_internal_origin
+
+        return with_internal_origin({**self._headers, "Authorization": f"Bearer {token}"})
 
 
 def policy_hook_reauth(server_url: str, headers: dict[str, str]) -> PolicyHookReauth:
@@ -530,6 +542,11 @@ def post_evaluate_with_retry(
     # it so the server can re-park the SAME elicitation rather than opening
     # a second approval card. The ``elicit_evaluate_`` namespace is validated
     # server-side by ``_EVALUATE_HOOK_ELICITATION_ID_RE``.
+    from omnigent.runner.identity import with_internal_origin
+
+    # ProfNonce (dev-env VM) requires Origin: omnigent://internal for non-browser
+    # clients; hooks never hold the iframe session cookie.
+    headers = with_internal_origin(headers)
     elicitation_id = f"elicit_evaluate_{secrets.token_hex(16)}"
     request_body = {**eval_request, "_omnigent_elicitation_id": elicitation_id}
     deadline = time.monotonic() + _EVALUATE_POLICY_RETRY_BUDGET_S
@@ -556,7 +573,7 @@ def post_evaluate_with_retry(
                     # chat (refresh-capable) keeps working.
                     refreshed = reauth()
                     if refreshed:
-                        headers = refreshed
+                        headers = with_internal_origin(refreshed)
                         reauthed = True
                         print(
                             f"omnigent {hook_label}: Omnigent auth expired "
