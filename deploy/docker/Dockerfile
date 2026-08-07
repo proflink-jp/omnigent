@@ -213,6 +213,13 @@ RUN apt-get update \
 RUN groupadd -g 1000660000 sandbox \
  && useradd -m -d /sandbox -u 1000660000 -g sandbox sandbox
 
+# Dev-environment user — the docker-compose runs the container as
+# ${UID:-1000}. When UID is unset (defaults to 1000), this user
+# matches and getpwuid() resolves without host passwd mounts.
+# /home/agent also anchors the config volume defaults (claude-accs,
+# .config/github, .pi/agent, .omp/agent).
+RUN groupadd -g 1000 agent \
+ && useradd -m -d /home/agent -u 1000 -g agent agent
 # Git credential helper for private repositories over HTTPS: answers
 # `git credential get` from GIT_TOKEN / GIT_USERNAME in the
 # environment (injected via Modal secrets — see deploy/modal/README.md
@@ -245,6 +252,15 @@ RUN npm install -g --no-audit --no-fund \
       @openai/codex \
       @earendil-works/pi-coding-agent \
  && npm cache clean --force
+
+# Bun (project JS runtime + lefthook executor). The host image already
+# has curl + unzip from the apt block above. Installing here keeps the
+# image self-contained — no host bind mounts, no path detection.
+ARG BUN_VERSION=1.3.14
+RUN curl -fsSL https://bun.sh/install | bash -s -- "bun-v${BUN_VERSION}" \
+ && cp /root/.bun/bin/bun /usr/local/bin/bun \
+ && ln -s /usr/local/bin/bun /usr/local/bin/bunx \
+ && /usr/local/bin/bun --version
 
 # Kiro CLI is not published as an npm package, and its installer has NO version
 # flag — `curl …/install | bash` always fetches `latest`, so the image was
