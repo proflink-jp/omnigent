@@ -721,6 +721,7 @@ def _parse_default_families(
     # rejected), rather than failing loudly only at pi launch.
     pi_ok = pi_capable and bool(served & frozenset(_PI_FALLBACK_FAMILIES))
     allowed = served | {PI_SURFACE, OMP_SURFACE} if pi_ok else served
+    invalid = requested - allowed
     if invalid:
         raise OmnigentError(
             f"provider {name!r}: 'default' names {sorted(invalid)}, which it does "
