@@ -45,6 +45,7 @@ from omnigent.onboarding.harness_install import (
     KIRO_KEY,
     OPENCODE_KEY,
     PI_KEY,
+    OMP_KEY,
     QWEN_KEY,
     harness_cli_installed,
     required_cli_for_harness,
@@ -54,6 +55,7 @@ from omnigent.onboarding.provider_config import (
     _HARNESS_FAMILY,
     GEMINI_FAMILY,
     OPENAI_FAMILY,
+    OMP_SURFACE,
     PI_SURFACE,
     SUBSCRIPTION_KIND,
     default_provider_for_harness,
@@ -92,6 +94,12 @@ _FAMILY_CREDENTIAL_CHECK: dict[str, Callable[[], bool]] = {
 # ``_HARNESS_FAMILY`` entry — pi uses the ``PI_SURFACE`` sentinel — so they must
 # be gated explicitly or they fail open like an unknown harness.
 _PI_HARNESSES: frozenset[str] = frozenset({PI_SURFACE, "pi-native"})
+
+# CLI-wrapping omp harnesses. Both the bare ``omp`` surface and the native
+# ``omp-native`` wrapper launch the ``omp`` binary (a symlink to ``pi``).
+# Like pi, omp has no ``_HARNESS_FAMILY`` entry — it uses the ``OMP_SURFACE``
+# sentinel — so they must be gated explicitly or they fail open like an unknown harness.
+_OMP_HARNESSES: frozenset[str] = frozenset({OMP_SURFACE, "omp-native"})
 
 # Surface name for Kimi Code in the readiness map. Mirrors :data:`PI_SURFACE`
 # — kimi is a CLI-backed harness with its own backend (Moonshot AI's), not a
@@ -394,6 +402,13 @@ def _harness_availability(canonical: str) -> HarnessAvailability:
         if not harness_cli_installed(PI_KEY):
             return "binary-missing"
         return True if _family_provider_configured(PI_SURFACE) else "needs-auth"
+    if canonical in _OMP_HARNESSES:
+        # omp has no CLI login — its only credential is an omnigent-managed
+        # provider (an API key / gateway, incl. one set from the UI). Mirrors
+        # pi's readiness check: binary + provider.
+        if not harness_cli_installed(OMP_KEY):
+            return "binary-missing"
+        return True if _family_provider_configured(OMP_SURFACE) else "needs-auth"
     return harness_is_configured(canonical)
 
 
@@ -424,6 +439,7 @@ def configured_harness_map() -> dict[str, HarnessAvailability]:
     spellings.update(_EXECUTOR_TYPE_HARNESS_ALIASES)
     spellings.update(HARNESS_ALIASES)
     spellings.update(_PI_HARNESSES)
+    spellings.update(_OMP_HARNESSES)
     spellings.update(_OPENCODE_HARNESSES)
     spellings.update(_CURSOR_NATIVE_HARNESSES)
     spellings.update(_KIRO_NATIVE_HARNESSES)

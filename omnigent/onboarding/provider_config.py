@@ -95,6 +95,10 @@ _PI_FALLBACK_FAMILIES = (ANTHROPIC_FAMILY, OPENAI_FAMILY)
 # openai family default, skipping the non-pi kinds (see
 # :func:`default_provider_for_harness`).
 PI_SURFACE = "pi"
+# Oh My Pi surface. Like :data:`PI_SURFACE`, it is a CLI-backed harness that is
+# not a member of the anthropic/openai families; it resolves providers the same
+# way Pi does — via its own surface key as a provider default.
+OMP_SURFACE = "omp"
 
 # Accepted ``wire_api`` values. ``responses`` is the OpenAI Responses API;
 # ``chat`` is Chat Completions. Only meaningful for the ``openai`` family
@@ -716,8 +720,7 @@ def _parse_default_families(
     # "pi"]`` at parse time (parity with how a subscription's pi scope is
     # rejected), rather than failing loudly only at pi launch.
     pi_ok = pi_capable and bool(served & frozenset(_PI_FALLBACK_FAMILIES))
-    allowed = served | {PI_SURFACE} if pi_ok else served
-    invalid = requested - allowed
+    allowed = served | {PI_SURFACE, OMP_SURFACE} if pi_ok else served
     if invalid:
         raise OmnigentError(
             f"provider {name!r}: 'default' names {sorted(invalid)}, which it does "
@@ -746,7 +749,7 @@ def _default_raw_value(default_families: frozenset[str], served: set[str]) -> ob
     # the pi scope (see _parse_default_families), so a default set that
     # includes pi must stay explicit — rendering it as ``True`` would drop
     # the pi scope on the next parse.
-    if PI_SURFACE not in default_families and default_families == frozenset(served) - {PI_SURFACE}:
+    if OMP_SURFACE not in default_families and PI_SURFACE not in default_families and default_families == frozenset(served) - {PI_SURFACE, OMP_SURFACE}:
         return True
     if len(default_families) == 1:
         return next(iter(default_families))
@@ -1160,8 +1163,8 @@ def default_provider_for_harness(config: dict[str, object], harness: str) -> Pro
     family = _HARNESS_FAMILY.get(harness)
     if family is not None:
         return get_default_provider(config, family)
-    # Unmapped (e.g. pi): an explicit pi-scope default is authoritative.
-    explicit = get_default_provider(config, PI_SURFACE)
+    # Unmapped (e.g. pi, omp): an explicit surface-scope default is authoritative.
+    explicit = get_default_provider(config, PI_SURFACE) or get_default_provider(config, OMP_SURFACE)
     if explicit is not None:
         return explicit
     # Fall back across the pi-capable surfaces — prefer anthropic's default,

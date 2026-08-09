@@ -51,6 +51,11 @@ from omnigent.onboarding.provider_config import ANTHROPIC_FAMILY, GEMINI_FAMILY,
 # first-run ``run`` flow falls back to it, so it has install metadata too.
 PI_KEY = "pi"
 
+# Oh My Pi harness: wraps the same ``pi`` binary as the Pi harness (``/usr/local/bin/omp``
+# is a symlink to ``pi``), with its own wrapper label for UI distinction.
+# Like Pi, OMP has no CLI login — its only credential is an Omnigent-managed provider.
+OMP_KEY = "omp"
+
 # Qwen Code uses npm installation and has login/logout commands similar to
 # other coding CLIs. The binary name is ``qwen``.
 QWEN_KEY = "qwen"
@@ -118,6 +123,7 @@ _HARNESS_INSTALL: dict[str, HarnessInstallSpec] = {
         logout_args=("logout",),
         status_args=("login", "status"),
     ),
+    OMP_KEY: HarnessInstallSpec("OMP", "omp"),
     PI_KEY: HarnessInstallSpec("Pi", "pi", "@earendil-works/pi-coding-agent"),
     # Pin the install to the supported 1.17.x range: opencode-ai's npm ``latest``
     # is a ``0.0.0-beta-*`` pre-release, so a bare ``opencode-ai`` would install a
@@ -223,6 +229,9 @@ _HARNESS_INSTALL: dict[str, HarnessInstallSpec] = {
 # bridge, NOT the ``cursor-agent`` CLI).
 _HARNESS_NAME_TO_KEY: dict[str, str] = {
     "claude-native": ANTHROPIC_FAMILY,
+    OMP_KEY: OMP_KEY,
+    "omp-native": OMP_KEY,
+    "native-omp": OMP_KEY,
     "codex-native": OPENAI_FAMILY,
     PI_KEY: PI_KEY,
     "pi-native": PI_KEY,
@@ -337,12 +346,12 @@ def ui_installable_harnesses() -> frozenset[str]:
     return frozenset(resolvable)
 
 
-# The families whose credential the UI can WRITE (Claude/Codex/Pi). A strict
+# The families whose credential the UI can WRITE (Claude/Codex/Pi/OMP). A strict
 # subset of the installable families: opencode/qwen are installable but env-auth
 # (omnigent stores no key for them), so they are NOT credential-configurable.
-# ``pi`` consumes anthropic/openai and is handled by the host store-secret
-# handler, so it's included via its own key.
-_UI_CREDENTIAL_FAMILIES: frozenset[str] = frozenset({ANTHROPIC_FAMILY, OPENAI_FAMILY, PI_KEY})
+# ``pi`` / ``omp`` consumes anthropic/openai and is handled by the host store-secret
+# handler, so they are included via their own keys.
+_UI_CREDENTIAL_FAMILIES: frozenset[str] = frozenset({ANTHROPIC_FAMILY, OPENAI_FAMILY, PI_KEY, OMP_KEY})
 
 
 def ui_credential_configurable_harnesses() -> frozenset[str]:
