@@ -123,7 +123,7 @@ _HARNESS_INSTALL: dict[str, HarnessInstallSpec] = {
         logout_args=("logout",),
         status_args=("login", "status"),
     ),
-    OMP_KEY: HarnessInstallSpec("OMP", "omp"),
+    OMP_KEY: HarnessInstallSpec("OMP", "omp", None),
     PI_KEY: HarnessInstallSpec("Pi", "pi", "@earendil-works/pi-coding-agent"),
     # Pin the install to the supported 1.17.x range: opencode-ai's npm ``latest``
     # is a ``0.0.0-beta-*`` pre-release, so a bare ``opencode-ai`` would install a
