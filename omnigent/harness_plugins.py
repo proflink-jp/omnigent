@@ -22,6 +22,7 @@ from omnigent._wrapper_labels import (
     HERMES_NATIVE_WRAPPER_VALUE,
     KIMI_NATIVE_WRAPPER_VALUE,
     KIRO_NATIVE_WRAPPER_VALUE,
+    OMP_NATIVE_WRAPPER_VALUE,
     OPENCODE_NATIVE_WRAPPER_VALUE,
     PI_NATIVE_WRAPPER_VALUE,
     QWEN_NATIVE_WRAPPER_VALUE,
@@ -134,6 +135,15 @@ PI_NATIVE_CODING_AGENT = NativeCodingAgent(
     harness="pi-native",
     wrapper_label=PI_NATIVE_WRAPPER_VALUE,
     terminal_name="pi",
+)
+
+OMP_NATIVE_CODING_AGENT = NativeCodingAgent(
+    key="omp",
+    display_name="OMP",
+    agent_name="omp-native-ui",
+    harness="omp-native",
+    wrapper_label=OMP_NATIVE_WRAPPER_VALUE,
+    terminal_name="omp",
 )
 
 OPENCODE_NATIVE_CODING_AGENT = NativeCodingAgent(
@@ -257,6 +267,17 @@ _BUILTIN_CAPABILITIES: dict[str, HarnessCapabilities] = {
     # streams 7 deltas live (by what path was not traced), so the grep-based
     # flip was wrong for it. The rest stay True until live-verified.
     "pi-native": _C(
+        _IM.NATIVE_TUI,
+        _EL.NONE,
+        _RS.WARM_REATTACH,
+        _EF.NONE,
+        _MF.MULTI,
+        _AU.SESSION_SCOPED_CONFIG,
+        subagents=False,
+        interrupt=True,
+        streaming=True,
+    ),
+    "omp-native": _C(
         _IM.NATIVE_TUI,
         _EL.NONE,
         _RS.WARM_REATTACH,
@@ -537,6 +558,8 @@ _BUILTIN_CONTRIBUTION = HarnessContribution(
             "kimi",
             "kimi-native",
             "kiro-native",
+            "omp",
+            "omp-native",
             "open-responses",
             "openai-agents",
             "opencode-native",
@@ -564,6 +587,8 @@ _BUILTIN_CONTRIBUTION = HarnessContribution(
         "kimi": "omnigent.inner.kimi_harness",
         "kimi-native": "omnigent.inner.kimi_native_harness",
         "kiro-native": "omnigent.inner.kiro_native_harness",
+        "omp": "omnigent.inner.omp_harness",
+        "omp-native": "omnigent.inner.omp_native_harness",
         "openai-agents": "omnigent.inner.openai_agents_sdk_harness",
         "opencode-native": "omnigent.inner.opencode_native_harness",
         "pi": "omnigent.inner.pi_harness",
@@ -582,6 +607,7 @@ _BUILTIN_CONTRIBUTION = HarnessContribution(
         "native-hermes": "hermes-native",
         "native-kimi": "kimi-native",
         "native-kiro": "kiro-native",
+        "native-omp": "omp-native",
         "native-opencode": "opencode-native",
         "native-pi": "pi-native",
         "native-qwen": "qwen-native",
@@ -609,7 +635,9 @@ _BUILTIN_CONTRIBUTION = HarnessContribution(
             "native-kiro",
             "native-opencode",
             "native-pi",
+            "native-omp",
             "native-qwen",
+            "omp-native",
             "opencode-native",
             "pi-native",
             "qwen-native",
@@ -619,6 +647,7 @@ _BUILTIN_CONTRIBUTION = HarnessContribution(
         CLAUDE_NATIVE_CODING_AGENT,
         CODEX_NATIVE_CODING_AGENT,
         PI_NATIVE_CODING_AGENT,
+        OMP_NATIVE_CODING_AGENT,
         OPENCODE_NATIVE_CODING_AGENT,
         CURSOR_NATIVE_CODING_AGENT,
         KIRO_NATIVE_CODING_AGENT,
