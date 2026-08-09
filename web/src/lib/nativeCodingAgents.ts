@@ -83,7 +83,7 @@ export const NATIVE_CODING_AGENTS = [
   {
     key: "pi",
     agentName: "pi-native-ui",
-    harness: "omp-native",
+    harness: "pi-native",
     wrapperLabel: "pi-native-ui",
     displayName: "Pi",
     iconKind: "pi",
@@ -92,7 +92,7 @@ export const NATIVE_CODING_AGENTS = [
   {
     key: "omp",
     agentName: "omp-native-ui",
-    harness: "omp-native",
+    harness: "pi-native",
     wrapperLabel: "omp-native-ui",
     displayName: "OMP",
     iconKind: "omp",
