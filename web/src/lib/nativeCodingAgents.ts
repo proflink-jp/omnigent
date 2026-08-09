@@ -9,6 +9,7 @@ export type NativeCodingAgentIconKind =
   | "codex"
   | "opencode"
   | "pi"
+  | "omp"
   | "cursor"
   | "kiro"
   | "goose"
@@ -82,11 +83,20 @@ export const NATIVE_CODING_AGENTS = [
   {
     key: "pi",
     agentName: "pi-native-ui",
-    harness: "pi-native",
+    harness: "omp-native",
     wrapperLabel: "pi-native-ui",
     displayName: "Pi",
     iconKind: "pi",
-    sortRank: 40,
+    sortRank: 50,
+  },
+  {
+    key: "omp",
+    agentName: "omp-native-ui",
+    harness: "omp-native",
+    wrapperLabel: "omp-native-ui",
+    displayName: "OMP",
+    iconKind: "omp",
+    sortRank: 51,
   },
   {
     key: "kiro",

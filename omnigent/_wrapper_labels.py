@@ -50,6 +50,10 @@ CODEX_NATIVE_WRAPPER_VALUE = "codex-native-ui"
 # ``conversations.labels[WRAPPER_LABEL_KEY]``.
 PI_NATIVE_WRAPPER_VALUE = "pi-native-ui"
 
+# Value the ``omnigent omp`` wrapper writes into
+# ``conversations.labels[WRAPPER_LABEL_KEY]``.
+OMP_NATIVE_WRAPPER_VALUE = "omp-native-ui"
+
 # Value the ``omnigent opencode`` wrapper writes into
 # ``conversations.labels[WRAPPER_LABEL_KEY]``.
 OPENCODE_NATIVE_WRAPPER_VALUE = "opencode-native-ui"

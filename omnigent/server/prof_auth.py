@@ -166,7 +166,7 @@ class ProfNonceMiddleware(BaseHTTPMiddleware):
             value=session,
             httponly=True,
             secure=True,
-            samesite="lax",
+            samesite="none",
             path="/",
             max_age=12 * 60 * 60,
         )
