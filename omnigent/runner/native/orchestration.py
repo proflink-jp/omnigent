@@ -4744,6 +4744,27 @@ def _claude_config_dir_from_spec(agent_spec: AgentSpec | ResolvedSpec | None) ->
     return value or None
 
 
+def _claude_oauth_token_from_spec(agent_spec: AgentSpec | ResolvedSpec | None) -> str | None:
+    """Read a per-agent OAuth token from the agent spec.
+
+    Supports two forms in ``executor.config.claude_oauth_token``:
+    - A literal token value (e.g. ``sk-ant-oat01-...``).
+    - An env-var reference prefixed with ``$`` (e.g. ``$CLAUDE_OAUTH_YO``),
+      which is resolved from the runner's environment.
+    """
+    spec = agent_spec.spec if isinstance(agent_spec, ResolvedSpec) else agent_spec
+    if spec is None:
+        return None
+    raw = spec.executor.config.get("claude_oauth_token")
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    if not value:
+        return None
+    if value.startswith("$"):
+        return os.environ.get(value[1:])
+    return value
+
 def _claude_native_terminal_env_for_spec(
     claude_config: ClaudeNativeUcodeConfig | None,
     agent_spec: AgentSpec | ResolvedSpec | None,
@@ -4761,6 +4782,9 @@ def _claude_native_terminal_env_for_spec(
     config_dir = _claude_config_dir_from_spec(agent_spec)
     if config_dir is not None:
         env["CLAUDE_CONFIG_DIR"] = config_dir
+    oauth_token = _claude_oauth_token_from_spec(agent_spec)
+    if oauth_token:
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = oauth_token
     return env
 
 

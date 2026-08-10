@@ -219,7 +219,8 @@ RUN groupadd -g 1000660000 sandbox \
 # /home/agent also anchors the config volume defaults (claude-accs,
 # .config/github, .pi/agent, .omp/agent).
 RUN groupadd -g 1000 agent \
- && useradd -m -d /home/agent -u 1000 -g agent agent
+ && useradd -m -d /home/agent -u 1000 -g agent agent \
+ && chmod 701 /home/agent
 # Git credential helper for private repositories over HTTPS: answers
 # `git credential get` from GIT_TOKEN / GIT_USERNAME in the
 # environment (injected via Modal secrets — see deploy/modal/README.md
