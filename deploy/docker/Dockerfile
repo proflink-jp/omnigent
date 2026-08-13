@@ -187,6 +187,8 @@ FROM node:${NODE_VERSION}-slim AS node-runtime
 #     never reference it.
 FROM python:${PYTHON_VERSION}-slim AS host
 ARG NPM_CONFIG_REGISTRY=
+ARG AGENT_UID=1000
+ARG AGENT_GID=1000
 ENV NPM_CONFIG_REGISTRY=${NPM_CONFIG_REGISTRY}
 
 # IS_SANDBOX: devcontainer-convention flag consulted by Claude Code —
@@ -214,12 +216,13 @@ RUN groupadd -g 1000660000 sandbox \
  && useradd -m -d /sandbox -u 1000660000 -g sandbox sandbox
 
 # Dev-environment user — the docker-compose runs the container as
-# ${UID:-1000}. When UID is unset (defaults to 1000), this user
-# matches and getpwuid() resolves without host passwd mounts.
+# ${UID:-1000}; the build is parameterized to match (AGENT_UID/AGENT_GID,
+# defaulting to 1000 for the VM). When they match, getpwuid() resolves
+# without host passwd mounts.
 # /home/agent also anchors the config volume defaults (claude-accs,
 # .config/github, .pi/agent, .omp/agent).
-RUN groupadd -g 1000 agent \
- && useradd -m -d /home/agent -u 1000 -g agent agent \
+RUN groupadd -g ${AGENT_GID} agent \
+ && useradd -m -d /home/agent -u ${AGENT_UID} -g agent agent \
  && chmod 701 /home/agent
 # Git credential helper for private repositories over HTTPS: answers
 # `git credential get` from GIT_TOKEN / GIT_USERNAME in the
