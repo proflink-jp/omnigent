@@ -486,9 +486,11 @@ describe("harnessUnconfiguredOnHost", () => {
 
   it("classifies structured codex reasons (bare + native spellings)", () => {
     const testHost = hostWith({ codex: "needs-auth", "codex-native": "binary-missing" });
-    expect(harnessUnconfiguredOnHost("codex", testHost)).toBe(true);
+    // needs-auth is launchable (per-token auth) → not "unconfigured".
+    expect(harnessUnconfiguredOnHost("codex", testHost)).toBe(false);
     expect(harnessUnavailableReasonOnHost("codex", testHost)).toBe("needs-auth");
     expect(harnessUnavailableReasonOnHost("codex-native", testHost)).toBe("binary-missing");
+    expect(harnessUnconfiguredOnHost("codex-native", testHost)).toBe(true);
   });
 
   it("ignores unknown future reason strings", () => {
@@ -1205,11 +1207,10 @@ describe("NewChatLandingScreen", () => {
     expect((screen.getByTestId("harness-setup-install") as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("copies the login command (no Install) for a codex needs-auth state", async () => {
-    // Binary present, just not logged in → dialog shows the `codex login`
-    // instruction as a click-to-copy command, never an Install button (a
-    // reinstall wouldn't add the login).
-    copyTextMock.mockClear();
+  it("keeps needs-auth harnesses inline — launchable, per-token auth, still badged", () => {
+    // Binary present, not machine-logged-in → the harness launches anyway
+    // (per-session token auth), so it stays inline with its "needs auth"
+    // badge and never shows the "isn't configured" composer notice.
     mockHosts([
       { ...host("online"), configured_harnesses: { "codex-native": "needs-auth" } } as Host,
     ]);
@@ -1217,15 +1218,14 @@ describe("NewChatLandingScreen", () => {
       harness_install_enabled: true,
       installable_harnesses: ["codex", "codex-native"],
     });
-    selectUnconfiguredAgent("a2");
-
-    fireEvent.click(screen.getByTestId("new-chat-landing-harness-setup"));
-    const command = screen.getByTestId("harness-setup-command");
-    expect(command.textContent).toContain("codex login");
-    expect(screen.queryByTestId("harness-setup-install")).toBeNull();
-
-    fireEvent.click(command);
-    await waitFor(() => expect(copyTextMock).toHaveBeenCalledWith("codex login"));
+    fireEvent.pointerDown(screen.getByTestId("new-chat-landing-agent-select"), { button: 0 });
+    // a2 is inline (not folded behind "More") and keeps its amber badge.
+    expect(screen.getByTestId("new-chat-landing-agent-a2")).toBeTruthy();
+    expect(screen.getByTestId("new-chat-landing-agent-warning-a2")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("new-chat-landing-agent-a2"));
+    // No "isn't configured" notice and no Setup affordance: it can launch.
+    expect(screen.queryByTestId("new-chat-landing-harness-warning")).toBeNull();
+    expect(screen.queryByTestId("new-chat-landing-harness-setup")).toBeNull();
   });
 
   it("hides the Install button when the server doesn't list the harness as installable", () => {
@@ -1316,15 +1316,16 @@ describe("NewChatLandingScreen", () => {
   it("falls back to the original setup guidance when the feature is off", () => {
     // Flag OFF (renderLanding default) → the pre-feature UI: the warning shows
     // the descriptive "run omnigent setup" message, NOT the "Set up" action or
-    // dialog. This is the no-op-when-disabled contract.
+    // dialog. This is the no-op-when-disabled contract. (A hard-unconfigured
+    // harness: needs-auth ones no longer warn — they can launch.)
     mockHosts([
-      { ...host("online"), configured_harnesses: { "codex-native": "needs-auth" } } as Host,
+      { ...host("online"), configured_harnesses: { "codex-native": false } } as Host,
     ]);
     renderLanding();
     selectUnconfiguredAgent("a2");
 
     const warning = screen.getByTestId("new-chat-landing-harness-warning");
-    expect(warning.textContent).toContain("codex login");
+    expect(warning.textContent).toContain("omnigent setup");
     // No "Set up" affordance and no dialog trigger when the feature is off.
     expect(screen.queryByTestId("new-chat-landing-harness-setup")).toBeNull();
   });

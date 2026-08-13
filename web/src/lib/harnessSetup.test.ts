@@ -90,9 +90,12 @@ describe("harnessUnavailableReasonOnHost", () => {
 });
 
 describe("harnessUnconfiguredOnHost", () => {
-  it("is true exactly when there's an unavailable reason", () => {
+  it("is true for hard-unavailable reasons only", () => {
     expect(harnessUnconfiguredOnHost("codex", hostWith({ codex: false }))).toBe(true);
+    expect(harnessUnconfiguredOnHost("codex", hostWith({ codex: "binary-missing" }))).toBe(true);
     expect(harnessUnconfiguredOnHost("codex", hostWith({ codex: true }))).toBe(false);
+    // needs-auth: CLI installed, auth per-session → launchable, not "unconfigured".
+    expect(harnessUnconfiguredOnHost("codex", hostWith({ codex: "needs-auth" }))).toBe(false);
   });
 });
 

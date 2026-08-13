@@ -1049,8 +1049,10 @@ export function AgentHarnessPicker({
     return withTooltip ? <AgentRowTooltip agent={agent}>{inner}</AgentRowTooltip> : inner;
   };
 
+  // Badge on any not-ready reason, including "needs-auth" (which is
+  // launchable and therefore not folded — see harnessUnconfiguredOnHost).
   const renderBadge = (agent: AvailableAgent) =>
-    harnessUnconfiguredOnHost(agent.harness, host) ? (
+    harnessUnavailableReasonOnHost(agent.harness, host) !== null ? (
       <Badge
         variant="outline"
         className="ml-auto self-center border-amber-300 bg-amber-50 text-[11px] text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
@@ -1692,7 +1694,7 @@ function HarnessConfigModal({
                     <SelectItem key={id} value={id} data-testid={`new-chat-landing-harness-${id}`}>
                       <span className="flex items-center gap-2">
                         {label}
-                        {harnessUnconfiguredOnHost(id, host) && (
+                        {harnessUnavailableReasonOnHost(id, host) !== null && (
                           <Badge
                             variant="outline"
                             className="border-amber-300 bg-amber-50 text-[11px] text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"

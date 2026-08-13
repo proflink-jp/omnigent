@@ -74,14 +74,21 @@ export function harnessUnavailableReasonOnHost(
 }
 
 /**
- * Whether *harness* is reported not-ready on *host*. Gates the "needs setup"
- * badge in the picker rows and the composer notice.
+ * Whether *harness* is reported not-runnable on *host*. Gates the "needs
+ * setup" badge in the picker rows and the composer notice.
+ *
+ * ``needs-auth`` is deliberately excluded: the harness CLI is installed and
+ * the launch gate passes — auth happens per-session (e.g. a claude-native
+ * agent carrying its own ``claude_oauth_token``). Such harnesses keep their
+ * amber "needs auth" badge (via :func:`harnessUnavailableReasonOnHost`) but
+ * stay inline in the picker and never trigger the "isn't configured" notice.
  */
 export function harnessUnconfiguredOnHost(
   harness: string | null | undefined,
   host: Host | undefined | null,
 ): boolean {
-  return harnessUnavailableReasonOnHost(harness, host) !== null;
+  const reason = harnessUnavailableReasonOnHost(harness, host);
+  return reason !== null && reason !== "needs-auth";
 }
 
 /**
