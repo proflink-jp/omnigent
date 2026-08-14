@@ -709,13 +709,13 @@ describe("NewChatLandingScreen create flow", () => {
     await waitForWorkspaceSeed();
     // Open Claude Code's config modal: it shows the permission select (not an
     // approval select), and Codex's stored "full-access" preset doesn't bleed
-    // in — the permission select sits at its Default.
+    // in — the permission select sits at its shipped default.
     openAgentConfig("ag_native");
     expect(screen.queryByTestId("new-chat-landing-config-approval")).toBeNull();
-    // The permission select's trigger displays its current value — "Default",
+    // The permission select's trigger displays its current value — "Auto",
     // not Codex's stored "full-access" (which isn't even a valid value here).
     expect(screen.getByTestId("new-chat-landing-config-permission").textContent).toContain(
-      "Default",
+      "Auto",
     );
   });
 
@@ -754,7 +754,7 @@ describe("NewChatLandingScreen create flow", () => {
     expect(body.terminal_launch_args).toBeUndefined();
   });
 
-  it("omits terminal_launch_args when permission mode is left at default for claude-native", async () => {
+  it("posts --permission-mode auto when the picker is left untouched for claude-native", async () => {
     setAgents([agent({ id: "ag_native", name: "claude-native-ui", display_name: "Claude Code" })]);
     vi.mocked(authenticatedFetch).mockResolvedValueOnce({
       ok: true,
@@ -763,20 +763,42 @@ describe("NewChatLandingScreen create flow", () => {
 
     renderLanding();
     await waitForWorkspaceSeed();
-    // Untouched default mode → the pill reads as just the agent name, with
-    // no "(Default)" suffix.
-    expect(screen.getByTestId("new-chat-landing-agent-select").textContent).not.toContain("(");
     typeMessage("go");
     fireEvent.click(screen.getByTestId("new-chat-landing-submit"));
 
     await waitFor(() => expect(authenticatedFetch).toHaveBeenCalledTimes(1));
     const [, init] = vi.mocked(authenticatedFetch).mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
-    // Anchor on the wrapper label so the absence check below isn't vacuous
+    // Anchor on the wrapper label so the assertion below isn't vacuous
     // against a malformed body.
     expect(body.labels?.["omnigent.wrapper"]).toBe("claude-code-native-ui");
-    // "Default" → no flag persisted (undefined is dropped by JSON.stringify),
-    // so the runner launches claude with its own default.
+    // Untouched picker seeds the shipped default "auto" — which MUST ride as
+    // an explicit flag: omitting it would leave Claude in its own prompting
+    // default. Only the literal "default" pick omits the flag.
+    expect(body.terminal_launch_args).toEqual(["--permission-mode", "auto"]);
+  });
+
+  it("omits terminal_launch_args when Default is explicitly picked for claude-native", async () => {
+    setAgents([agent({ id: "ag_native", name: "claude-native-ui", display_name: "Claude Code" })]);
+    vi.mocked(authenticatedFetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ id: "conv_native" }),
+    } as unknown as Response);
+
+    renderLanding();
+    await waitForWorkspaceSeed();
+    openAgentConfig("ag_native");
+    // The label "Default" also appears on hidden select-value spans (and the
+    // model select uses the same word), so target the option by role.
+    openSelect("new-chat-landing-config-permission");
+    fireEvent.click(screen.getByRole("option", { name: "Default" }));
+    saveConfig();
+    typeMessage("go");
+    fireEvent.click(screen.getByTestId("new-chat-landing-submit"));
+
+    await waitFor(() => expect(authenticatedFetch).toHaveBeenCalledTimes(1));
+    const [, init] = vi.mocked(authenticatedFetch).mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
     expect(body.terminal_launch_args).toBeUndefined();
   });
 

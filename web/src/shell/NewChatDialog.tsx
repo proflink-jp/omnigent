@@ -187,10 +187,11 @@ const AGENT_PICKER_DESCRIPTIONS: Record<string, string> = {
 const SKILL_PILL_AGENTS = new Set(["polly", "debby"]);
 
 // Claude Code's `claude --permission-mode` choices (v2.1). Claude-native
-// sessions only. "default" is Claude's own default and sends no flag; any
-// other value is passed through as `--permission-mode <value>` via the
-// session's terminal_launch_args. Keep in sync with `claude --help`.
-const CLAUDE_NATIVE_DEFAULT_PERMISSION_MODE = "default";
+// sessions only. "auto" is the shipped default; "default" sends no flag and
+// lets Claude prompt; any other value is passed through as
+// `--permission-mode <value>` via the session's terminal_launch_args. Keep in
+// sync with `claude --help`.
+const CLAUDE_NATIVE_DEFAULT_PERMISSION_MODE = "auto";
 const CLAUDE_NATIVE_PERMISSION_MODES: { value: string; label: string; description: string }[] = [
   { value: "default", label: "Default", description: "Prompts before edits and commands" },
   {
@@ -2999,10 +3000,12 @@ export function NewChatLandingScreen() {
                 ? { ...(nativeLabels ?? {}), [CODEX_NATIVE_BYPASS_SANDBOX_LABEL_KEY]: "1" }
                 : nativeLabels,
             // Permission / approval / cursor mode → CLI flag pair, persisted as
-            // terminal_launch_args. Omitted for the default and non-native agents.
+            // terminal_launch_args. Only the literal "default" is omitted
+            // (Claude's own no-flag mode); every other pick — including the
+            // shipped default "auto" — must be sent explicitly, or Claude
+            // falls back to prompting.
             terminal_launch_args:
-              agentSupportsPermissionMode &&
-              permissionMode !== CLAUDE_NATIVE_DEFAULT_PERMISSION_MODE
+              agentSupportsPermissionMode && permissionMode !== "default"
                 ? ["--permission-mode", permissionMode]
                 : agentSupportsApprovalMode && approvalMode !== CODEX_NATIVE_DEFAULT_APPROVAL_MODE
                   ? (CODEX_NATIVE_APPROVAL_MODES.find((m) => m.value === approvalMode)?.args ?? [])
