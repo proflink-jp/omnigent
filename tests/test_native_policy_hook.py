@@ -13,6 +13,59 @@ from omnigent.native_policy_hook import (
     hook_payload_to_evaluation_request,
     post_evaluate_with_retry,
 )
+from omnigent.runner.identity import OMNIGENT_INTERNAL_WS_ORIGIN, with_internal_origin
+
+
+def test_with_internal_origin_stamps_sentinel() -> None:
+    """Hooks need Origin: omnigent://internal for ProfNonce on dev-env VMs."""
+    assert with_internal_origin({}) == {"Origin": OMNIGENT_INTERNAL_WS_ORIGIN}
+    assert with_internal_origin({"Authorization": "Bearer x"}) == {
+        "Authorization": "Bearer x",
+        "Origin": OMNIGENT_INTERNAL_WS_ORIGIN,
+    }
+    # Does not overwrite an explicit Origin.
+    assert with_internal_origin({"Origin": "https://example.test"}) == {
+        "Origin": "https://example.test"
+    }
+
+
+def test_post_evaluate_with_retry_stamps_internal_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Policy evaluate POSTs must carry the internal Origin (ProfNonce bypass)."""
+    seen_headers: list[dict[str, str]] = []
+    ok = httpx.Response(
+        200,
+        text='{"result":"POLICY_ACTION_ALLOW"}',
+        request=httpx.Request("POST", "https://ap/x"),
+    )
+
+    class _Client:
+        def __init__(self, *, headers=None, timeout=None):
+            self.headers = dict(headers or {})
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, json=None):
+            seen_headers.append(dict(self.headers))
+            return ok
+
+    monkeypatch.setattr(native_policy_hook.httpx, "Client", _Client)
+    resp, error = post_evaluate_with_retry(
+        "https://ap/x",
+        {"Authorization": "Bearer t"},
+        {"event": {}},
+        5.0,
+        "evaluate-policy hook",
+    )
+    assert resp is ok
+    assert error is None
+    assert seen_headers[0]["Origin"] == OMNIGENT_INTERNAL_WS_ORIGIN
+    assert seen_headers[0]["Authorization"] == "Bearer t"
 
 
 def test_pre_tool_use_maps_to_phase_tool_call() -> None:
@@ -618,6 +671,7 @@ def test_policy_hook_request_headers_merges_baked_auth(
         "Content-Type": "application/json",
         "Authorization": "Bearer tok",
         "X-Databricks-Org-Id": "org123",
+        "Origin": OMNIGENT_INTERNAL_WS_ORIGIN,
     }
 
 
@@ -635,7 +689,10 @@ def test_policy_hook_request_headers_tolerates_missing_or_bad_env(
         monkeypatch.setenv("_OMNIGENT_AUTH_HEADERS", raw)
     else:
         monkeypatch.delenv("_OMNIGENT_AUTH_HEADERS", raising=False)
-    assert native_policy_hook.policy_hook_request_headers() == {"Content-Type": "application/json"}
+    assert native_policy_hook.policy_hook_request_headers() == {
+        "Content-Type": "application/json",
+        "Origin": OMNIGENT_INTERNAL_WS_ORIGIN,
+    }
 
 
 def test_policy_hook_wrapper_script_bakes_auth_and_routing(
@@ -662,12 +719,13 @@ def test_policy_hook_wrapper_script_bakes_auth_and_routing(
     assert script.startswith("#!/bin/sh\n")
     assert "_OMNIGENT_SERVER_URL=https://acme.databricks.com/api/2.0/omnigent" in script
     assert "_OMNIGENT_SESSION_ID=conv_x" in script
-    # The baked headers carry BOTH the bearer and the routing header.
+    # The baked headers carry bearer, routing, and internal Origin (ProfNonce).
     line = next(
         ln for ln in script.splitlines() if ln.startswith("export _OMNIGENT_AUTH_HEADERS=")
     )
     assert "Bearer tok" in line
     assert "X-Databricks-Org-Id" in line and "org123" in line
+    assert "omnigent://internal" in line
 
 
 def test_policy_hook_wrapper_script_omits_auth_when_unauthenticated(
@@ -712,7 +770,11 @@ def test_policy_hook_reauth_remints_and_preserves_routing_header(
         "https://acme.databricks.com/api/2.0/omnigent",
         {"Authorization": "Bearer stale", "X-Databricks-Org-Id": "o9"},
     )
-    assert reauth() == {"Authorization": "Bearer fresh-token", "X-Databricks-Org-Id": "o9"}
+    assert reauth() == {
+        "Authorization": "Bearer fresh-token",
+        "X-Databricks-Org-Id": "o9",
+        "Origin": OMNIGENT_INTERNAL_WS_ORIGIN,
+    }
 
 
 def test_policy_hook_reauth_returns_none_without_factory(

@@ -565,9 +565,11 @@ describe("harnessUnconfiguredOnHost", () => {
 
   it("classifies structured codex reasons (bare + native spellings)", () => {
     const testHost = hostWith({ codex: "needs-auth", "codex-native": "binary-missing" });
-    expect(harnessUnconfiguredOnHost("codex", testHost)).toBe(true);
+    // needs-auth is launchable (per-token auth) → not "unconfigured".
+    expect(harnessUnconfiguredOnHost("codex", testHost)).toBe(false);
     expect(harnessUnavailableReasonOnHost("codex", testHost)).toBe("needs-auth");
     expect(harnessUnavailableReasonOnHost("codex-native", testHost)).toBe("binary-missing");
+    expect(harnessUnconfiguredOnHost("codex-native", testHost)).toBe(true);
   });
 
   it("falls back to a generic warning for unknown reason strings", () => {
@@ -1621,26 +1623,6 @@ describe("NewChatLandingScreen", () => {
     expect(screen.queryByTestId("harness-credential-form")).toBeNull();
   });
 
-  it("enables Set up auth once the harness is installed (needs-auth)", () => {
-    // Installed but no credential → the auth row's "Set up auth" is enabled and
-    // expands the credential form.
-    mockHosts([
-      { ...host("online"), configured_harnesses: { "codex-native": "needs-auth" } } as Host,
-    ]);
-    renderLanding({
-      harness_install_enabled: true,
-      installable_harnesses: ["codex", "codex-native"],
-    });
-    selectUnconfiguredAgent("a2");
-    fireEvent.click(screen.getByTestId("new-chat-landing-harness-setup"));
-
-    const setUpAuth = screen.getByTestId("harness-setup-add-credential") as HTMLButtonElement;
-    expect(setUpAuth.textContent).toBe("Set up auth");
-    expect(setUpAuth.disabled).toBe(false);
-    fireEvent.click(setUpAuth);
-    expect(screen.getByTestId("harness-credential-form")).toBeTruthy();
-  });
-
   it("marks its Install button loading while THIS harness's install is pending", () => {
     // The dialog derives the in-flight indicator from React Query's mutation
     // state via useInstallingHarnesses (observer-independent, so a concurrent
@@ -1663,12 +1645,10 @@ describe("NewChatLandingScreen", () => {
     expect(installStep.contains(installingCaption)).toBe(true);
   });
 
-  it("offers the inline credential form (not an install) for codex needs-auth", async () => {
-    // Binary present, just not authed → the auth step offers "Set up auth",
-    // which expands the inline credential form. Never an Install button (a
-    // reinstall wouldn't add the credential). The subscription `codex login` is
-    // one option inside the form (the UI can't drive browser OAuth).
-    copyTextMock.mockClear();
+  it("keeps needs-auth harnesses inline — launchable, per-token auth, still badged", () => {
+    // Binary present, not machine-logged-in → the harness launches anyway
+    // (per-session token auth), so it stays inline with its "needs auth"
+    // badge and never shows the "isn't configured" composer notice.
     mockHosts([
       { ...host("online"), configured_harnesses: { "codex-native": "needs-auth" } } as Host,
     ]);
@@ -1676,19 +1656,14 @@ describe("NewChatLandingScreen", () => {
       harness_install_enabled: true,
       installable_harnesses: ["codex", "codex-native"],
     });
-    selectUnconfiguredAgent("a2");
-
-    fireEvent.click(screen.getByTestId("new-chat-landing-harness-setup"));
-    expect(screen.queryByTestId("harness-setup-install")).toBeNull();
-    // Open the inline form.
-    fireEvent.click(screen.getByTestId("harness-setup-add-credential"));
-    expect(screen.getByTestId("harness-credential-form")).toBeTruthy();
-    expect(screen.getByTestId("harness-credential-key")).toBeTruthy();
-    // The subscription login is a copy signpost inside the form.
-    const loginCopy = screen.getByTestId("harness-credential-login-copy");
-    expect(loginCopy.textContent).toContain("codex login");
-    fireEvent.click(loginCopy);
-    await waitFor(() => expect(copyTextMock).toHaveBeenCalledWith("codex login"));
+    fireEvent.pointerDown(screen.getByTestId("new-chat-landing-agent-select"), { button: 0 });
+    // a2 is inline (not folded behind "More") and keeps its amber badge.
+    expect(screen.getByTestId("new-chat-landing-agent-a2")).toBeTruthy();
+    expect(screen.getByTestId("new-chat-landing-agent-warning-a2")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("new-chat-landing-agent-a2"));
+    // No "isn't configured" notice and no Setup affordance: it can launch.
+    expect(screen.queryByTestId("new-chat-landing-harness-warning")).toBeNull();
+    expect(screen.queryByTestId("new-chat-landing-harness-setup")).toBeNull();
   });
 
   it("hides the Install button when the server doesn't list the harness as installable", () => {
@@ -1781,13 +1756,13 @@ describe("NewChatLandingScreen", () => {
     // the descriptive "run omni setup" message, NOT the "Set up" action or
     // dialog. This is the no-op-when-disabled contract.
     mockHosts([
-      { ...host("online"), configured_harnesses: { "codex-native": "needs-auth" } } as Host,
+      { ...host("online"), configured_harnesses: { "codex-native": false } } as Host,
     ]);
     renderLanding();
     selectUnconfiguredAgent("a2");
 
     const warning = screen.getByTestId("new-chat-landing-harness-warning");
-    expect(warning.textContent).toContain("codex login");
+    expect(warning.textContent).toContain("omni setup");
     // No "Set up" affordance and no dialog trigger when the feature is off.
     expect(screen.queryByTestId("new-chat-landing-harness-setup")).toBeNull();
   });
@@ -3102,9 +3077,10 @@ describe("NewChatLandingScreen agent picker + config gear", () => {
     renderLanding();
     openAgentConfig("a1");
     openSelect("new-chat-landing-config-permission");
-    // The footer starts on the selected (Default) mode's blurb...
+    // The footer starts on the selected mode's blurb — the shipped default
+    // is Auto (only the literal "default" pick omits the flag).
     const detail = screen.getByTestId("new-chat-landing-config-permission-detail");
-    expect(detail.textContent).toContain("Prompts before edits and commands");
+    expect(detail.textContent).toContain("Auto-runs; a classifier blocks risky actions");
     // ...then follows the hovered option.
     fireEvent.pointerEnter(screen.getByRole("option", { name: "Plan" }));
     expect(detail.textContent).toContain("Plans only; makes no edits");
@@ -3120,9 +3096,9 @@ describe("NewChatLandingScreen agent picker + config gear", () => {
     fireEvent.click(screen.getByTestId("new-chat-landing-config-cancel"));
     expect(screen.queryByTestId("new-chat-landing-config-modal")).toBeNull();
     fireEvent.click(screen.getByTestId("new-chat-landing-config-gear"));
-    // Reopened: Plan was discarded, the permission select is back at Default.
+    // Reopened: Plan was discarded, the permission select is back at Auto.
     expect(screen.getByTestId("new-chat-landing-config-permission").textContent).toContain(
-      "Default",
+      "Auto",
     );
   });
 
@@ -4179,7 +4155,7 @@ describe("NewChatLandingScreen Smart Routing harness row", () => {
     selectAgent("a1");
     fireEvent.click(screen.getByTestId("new-chat-landing-config-gear"));
     expect(screen.getByTestId("new-chat-landing-config-permission").textContent).toContain(
-      "Default",
+      "Auto",
     );
   });
 
@@ -4441,9 +4417,10 @@ describe("claude-code default permission mode (payload anchor for Auto)", () => 
     localStorage.clear();
   });
 
-  it("omits terminal_launch_args when the permission mode is left on Default", async () => {
-    // The behavior Auto matches: Default = inherit the machine's own config, so
-    // the create call carries no permission flag at all.
+  it("posts --permission-mode auto when the picker is left untouched for claude-native", async () => {
+    // The shipped default is Auto, which MUST ride as an explicit flag:
+    // omitting it would leave Claude in its own prompting default. Only the
+    // literal "default" pick omits the flag.
     authenticatedFetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({ id: "conv_claude" }),
@@ -4455,8 +4432,7 @@ describe("claude-code default permission mode (payload anchor for Auto)", () => 
     selectAgent("a1");
     const { raw } = await submitAndReadBody();
     expect(JSON.parse(raw).agent_id).toBe("a1");
-    expect(JSON.parse(raw).terminal_launch_args).toBeUndefined();
-    expect(raw).not.toContain("permission");
+    expect(JSON.parse(raw).terminal_launch_args).toEqual(["--permission-mode", "auto"]);
   });
 });
 // ---------------------------------------------------------------------------

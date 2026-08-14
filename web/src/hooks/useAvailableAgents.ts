@@ -1,7 +1,7 @@
 import { useQuery, type QueryClient } from "@tanstack/react-query";
 import { authenticatedFetch } from "@/lib/identity";
 import { agentRootName } from "@/lib/forkHarness";
-import { capitalizeAgentName } from "@/lib/agentLabels";
+import { AGENT_DISPLAY_NAMES, capitalizeAgentName } from "@/lib/agentLabels";
 import {
   nativeCodingAgentForAvailableAgent,
   nativeCodingAgentForAgentName,
@@ -45,26 +45,38 @@ export interface AvailableAgent {
   sessionId?: string;
 }
 
-const DISPLAY_NAMES: Record<string, string> = {
-  // nessie is no longer seeded, but older deployments retain their row.
-  nessie: "Nessie",
-  polly: "Polly",
-  debby: "Debby",
-};
-
 function displayNameForAgent(name: string, harness?: string | null): string {
-  return (
-    nativeCodingAgentForHarness(harness)?.displayName ??
-    nativeCodingAgentForAgentName(name)?.displayName ??
-    DISPLAY_NAMES[name] ??
-    capitalizeAgentName(name)
-  );
+  const base = agentRootName(name);
+  // Explicit catalog labels win (e.g. claude-prof-yo → "Claude (Yo)") so two
+  // agents that share a native harness keep distinct picker rows.
+  const explicit = AGENT_DISPLAY_NAMES[name] ?? AGENT_DISPLAY_NAMES[base];
+  if (explicit !== undefined) return explicit;
+  const byName = nativeCodingAgentForAgentName(base);
+  if (byName !== undefined) return byName.displayName;
+  // Harness-based native labels only for the canonical wrapper name (or a
+  // fork/switch clone of it). Custom agents with harness claude-native but a
+  // different name must not all render as "Claude Code".
+  const byHarness = nativeCodingAgentForHarness(harness);
+  if (
+    byHarness !== undefined &&
+    (name === byHarness.agentName || base === byHarness.agentName)
+  ) {
+    return byHarness.displayName;
+  }
+  return capitalizeAgentName(base);
 }
 
 function dedupeNativeAgents(agents: AvailableAgent[]): AvailableAgent[] {
   const result: AvailableAgent[] = [];
   const nativeIndex = new Map<string, number>();
   for (const agent of agents) {
+    const base = agentRootName(agent.name);
+    // Explicit multi-account catalog agents (e.g. claude-prof-yo) share a
+    // native harness with claude-native-ui but must keep their own picker row.
+    if (AGENT_DISPLAY_NAMES[agent.name] !== undefined || AGENT_DISPLAY_NAMES[base] !== undefined) {
+      result.push(agent);
+      continue;
+    }
     const nativeAgent = nativeCodingAgentForAvailableAgent(agent);
     if (nativeAgent === undefined) {
       result.push(agent);

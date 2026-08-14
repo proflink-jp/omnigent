@@ -3607,7 +3607,13 @@ async def _auto_create_kimi_terminal(
     # the workspace-routing header so neither is dropped.
     from omnigent.cli_auth import databricks_request_headers
 
-    _runner_headers = databricks_request_headers(server_url, bearer_token=_auth_token)
+    from omnigent.runner.identity import with_internal_origin
+
+    # Origin sentinel required for ProfNonce on prof dev-env VMs (hook POSTs
+    # are non-browser and have no iframe session cookie).
+    _runner_headers = with_internal_origin(
+        databricks_request_headers(server_url, bearer_token=_auth_token)
+    )
     write_hook_config(
         bridge_dir,
         server_url=server_url,
@@ -3975,9 +3981,12 @@ async def _auto_create_codex_terminal(
     # config (no refresh-capable auth of its own); the helper pairs the bearer
     # with the workspace-routing header so neither is dropped.
     from omnigent.cli_auth import databricks_request_headers
+    from omnigent.runner.identity import with_internal_origin
 
-    policy_headers = databricks_request_headers(
-        launch_config.policy_server_url, bearer_token=_policy_auth_token
+    policy_headers = with_internal_origin(
+        databricks_request_headers(
+            launch_config.policy_server_url, bearer_token=_policy_auth_token
+        )
     )
 
     # Symmetric with the claude-native arm: an auto-harness session landing on
@@ -5299,6 +5308,75 @@ def _claude_native_model_from_spec(agent_spec: AgentSpec | ResolvedSpec | None) 
     return model
 
 
+def _claude_config_dir_from_spec(agent_spec: AgentSpec | ResolvedSpec | None) -> str | None:
+    """
+    Read a per-agent Claude Code config directory from the agent spec.
+
+    Operators pin a credential tree via
+    ``executor.config.claude_config_dir`` (e.g.
+    ``/home/agent/claude-accs/.claude-prof-yo``) so two catalog agents can
+    share harness ``claude-native`` while authenticating as different
+    accounts. When unset, the terminal inherits the host/runner
+    ``CLAUDE_CONFIG_DIR`` (if any).
+
+    :param agent_spec: Agent spec object, or a resolved wrapper carrying a
+        ``spec`` attribute. ``None`` means no spec was available.
+    :returns: Absolute or home-relative config dir path, or ``None``.
+    """
+    spec = agent_spec.spec if isinstance(agent_spec, ResolvedSpec) else agent_spec
+    if spec is None:
+        return None
+    raw = spec.executor.config.get("claude_config_dir")
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    return value or None
+
+
+def _claude_oauth_token_from_spec(agent_spec: AgentSpec | ResolvedSpec | None) -> str | None:
+    """Read a per-agent OAuth token from the agent spec.
+
+    Supports two forms in ``executor.config.claude_oauth_token``:
+    - A literal token value (e.g. ``sk-ant-oat01-...``).
+    - An env-var reference prefixed with ``$`` (e.g. ``$CLAUDE_OAUTH_YO``),
+      which is resolved from the runner's environment.
+    """
+    spec = agent_spec.spec if isinstance(agent_spec, ResolvedSpec) else agent_spec
+    if spec is None:
+        return None
+    raw = spec.executor.config.get("claude_oauth_token")
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    if not value:
+        return None
+    if value.startswith("$"):
+        return os.environ.get(value[1:])
+    return value
+
+def _claude_native_terminal_env_for_spec(
+    claude_config: ClaudeNativeUcodeConfig | None,
+    agent_spec: AgentSpec | ResolvedSpec | None,
+) -> dict[str, str]:
+    """
+    Build Claude Code terminal env, including optional per-agent config dir.
+
+    :param claude_config: Optional provider/ucode launch config.
+    :param agent_spec: Session agent spec (may pin ``claude_config_dir``).
+    :returns: Environment overlays for the native Claude terminal process.
+    """
+    from omnigent.claude_native import build_native_claude_terminal_env
+
+    env = build_native_claude_terminal_env(claude_config)
+    config_dir = _claude_config_dir_from_spec(agent_spec)
+    if config_dir is not None:
+        env["CLAUDE_CONFIG_DIR"] = config_dir
+    oauth_token = _claude_oauth_token_from_spec(agent_spec)
+    if oauth_token:
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = oauth_token
+    return env
+
+
 def _cursor_native_model_from_spec(agent_spec: AgentSpec | ResolvedSpec | None) -> str | None:
     """
     Read the cursor-agent model id to launch the native TUI with, from a spec.
@@ -6187,7 +6265,12 @@ async def _auto_create_claude_terminal(
     # (web-UI-driven) session they would hang Claude in its terminal with
     # nothing shown in the UI. Acute with per-session worktrees,
     # which launch Claude in a brand-new, untrusted directory.
-    ensure_claude_workspace_trusted(Path(workspace))
+    # Pass the same config dir the terminal will use (agent pin, else
+    # $CLAUDE_CONFIG_DIR) so trust lands in the file Claude actually reads.
+    ensure_claude_workspace_trusted(
+        Path(workspace),
+        config_dir=_claude_config_dir_from_spec(agent_spec),
+    )
 
     from omnigent.runner._entry import _make_auth_token_factory, _RunnerDatabricksAuth
 
@@ -6209,13 +6292,18 @@ async def _auto_create_claude_terminal(
     # refresh-capable auth of its own); the helper pairs the bearer with the
     # workspace-routing header so neither is dropped.
     from omnigent.cli_auth import databricks_request_headers
+    from omnigent.runner.identity import with_internal_origin
 
-    _runner_headers = databricks_request_headers(server_url, bearer_token=_auth_token)
+    # Origin sentinel: Claude policy/permission hooks POST to the server
+    # without a browser cookie; ProfNonce requires omnigent://internal.
+    _runner_headers = with_internal_origin(
+        databricks_request_headers(server_url, bearer_token=_auth_token)
+    )
     _runner_auth = _RunnerDatabricksAuth(_auth_factory)
 
     from omnigent.claude_launcher import resolve_claude_launch
     from omnigent.claude_native import (
-        build_native_claude_terminal_env,
+        augment_claude_args,
         claude_config_with_launch_model_pinned,
         claude_config_with_routed_arms_pinned,
         resolve_claude_native_model_selection,
@@ -6572,7 +6660,10 @@ async def _auto_create_claude_terminal(
         # Tool Search env plus ucode gateway env (ANTHROPIC_BASE_URL
         # etc.) when derived. Empty provider config still forces
         # ENABLE_TOOL_SEARCH=true so MCP schemas are loaded on demand.
-        env=build_native_claude_terminal_env(claude_config),
+        # Per-agent ``executor.config.claude_config_dir`` overlays
+        # CLAUDE_CONFIG_DIR so catalog agents can select distinct baked
+        # Claude accounts (e.g. yo vs nana) without a host-wide flip.
+        env=_claude_native_terminal_env_for_spec(claude_config, agent_spec),
         # Names to strip (see ``_claude_terminal_env_unset``). Dropping
         # ``DATABRICKS_CONFIG_PROFILE`` matters because Claude's MCP servers
         # inherit this env and several build ``WorkspaceClient`` without pinning

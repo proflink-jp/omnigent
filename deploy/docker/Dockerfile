@@ -195,6 +195,8 @@ FROM node:${NODE_VERSION}-slim AS node-runtime
 #     never reference it.
 FROM python:${PYTHON_VERSION}-slim AS host
 ARG NPM_CONFIG_REGISTRY=
+ARG AGENT_UID=1000
+ARG AGENT_GID=1000
 ENV NPM_CONFIG_REGISTRY=${NPM_CONFIG_REGISTRY}
 
 # IS_SANDBOX: devcontainer-convention flag consulted by Claude Code —
@@ -221,6 +223,15 @@ RUN apt-get update \
 RUN groupadd -g 1000660000 sandbox \
  && useradd -m -d /sandbox -u 1000660000 -g sandbox sandbox
 
+# Dev-environment user — the docker-compose runs the container as
+# ${UID:-1000}; the build is parameterized to match (AGENT_UID/AGENT_GID,
+# defaulting to 1000 for the VM). When they match, getpwuid() resolves
+# without host passwd mounts.
+# /home/agent also anchors the config volume defaults (claude-accs,
+# .config/github, .pi/agent, .omp/agent).
+RUN groupadd -g ${AGENT_GID} agent \
+ && useradd -m -d /home/agent -u ${AGENT_UID} -g agent agent \
+ && chmod 701 /home/agent
 # Git credential helper for private repositories over HTTPS: answers
 # `git credential get` from GIT_TOKEN / GIT_USERNAME in the
 # environment (injected via Modal secrets — see deploy/modal/README.md
@@ -253,6 +264,15 @@ RUN npm install -g --no-audit --no-fund \
       @openai/codex \
       @earendil-works/pi-coding-agent \
  && npm cache clean --force
+
+# Bun (project JS runtime + lefthook executor). The host image already
+# has curl + unzip from the apt block above. Installing here keeps the
+# image self-contained — no host bind mounts, no path detection.
+ARG BUN_VERSION=1.3.14
+RUN curl -fsSL https://bun.sh/install | bash -s -- "bun-v${BUN_VERSION}" \
+ && cp /root/.bun/bin/bun /usr/local/bin/bun \
+ && ln -s /usr/local/bin/bun /usr/local/bin/bunx \
+ && /usr/local/bin/bun --version
 
 # Kiro CLI is not published as an npm package, and its installer has NO version
 # flag — `curl …/install | bash` always fetches `latest`, so the image was

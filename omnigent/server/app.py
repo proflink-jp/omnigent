@@ -1276,6 +1276,15 @@ def create_app(
     # outermost WS middleware — a forbidden origin is closed without even
     # reaching the metrics counter (which only counts on accept anyway).
     app.add_middleware(WebSocketOriginMiddleware)
+
+    # Prof nonce gate: intercepts ?t={nonce} before any route, validates
+    # against the prof backend, and redirects to strip the nonce.  No-op
+    # when env vars are unset — omnigent runs with no auth at all.
+    from omnigent.server.prof_auth import create_prof_middleware as _create_prof_mw
+
+    _prof_mw_cls, _prof_mw_kwargs = _create_prof_mw()
+    if _prof_mw_cls is not None:
+        app.add_middleware(_prof_mw_cls, **_prof_mw_kwargs)
     # Give the tool-policy ASK gate (which forwards the native-terminal
     # approval popup from a parked-gate background task, off any
     # request/route closure) the runner router so it can reach the bound

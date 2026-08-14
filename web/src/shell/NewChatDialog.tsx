@@ -217,10 +217,11 @@ const AGENT_PICKER_DESCRIPTIONS: Record<string, string> = {
 const SKILL_PILL_AGENTS = new Set(["polly", "debby"]);
 
 // Claude Code's `claude --permission-mode` choices (v2.1). Claude-native
-// sessions only. "default" is Claude's own default and sends no flag; any
-// other value is passed through as `--permission-mode <value>` via the
-// session's terminal_launch_args. Keep in sync with `claude --help`.
-const CLAUDE_NATIVE_DEFAULT_PERMISSION_MODE = "default";
+// sessions only. "auto" is the shipped default; "default" sends no flag and
+// lets Claude prompt; any other value is passed through as
+// `--permission-mode <value>` via the session's terminal_launch_args. Keep in
+// sync with `claude --help`.
+const CLAUDE_NATIVE_DEFAULT_PERMISSION_MODE = "auto";
 const CLAUDE_NATIVE_PERMISSION_MODES: { value: string; label: string; description: string }[] = [
   { value: "default", label: "Default", description: "Prompts before edits and commands" },
   {
@@ -1036,8 +1037,10 @@ export function AgentHarnessPicker({
     return withTooltip ? <AgentRowTooltip agent={agent}>{inner}</AgentRowTooltip> : inner;
   };
 
+  // Badge on any not-ready reason, including "needs-auth" (which is
+  // launchable and therefore not folded — see harnessUnconfiguredOnHost).
   const renderBadge = (agent: AvailableAgent) =>
-    harnessUnconfiguredOnHost(agent.harness, host) ? (
+    harnessUnavailableReasonOnHost(agent.harness, host) !== null ? (
       <Badge
         variant="outline"
         className="ml-auto self-center border-amber-300 bg-amber-50 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
@@ -1796,7 +1799,7 @@ function HarnessConfigModal({
                             {AUTO_HARNESS_DESCRIPTION}
                           </span>
                         )}
-                        {harnessUnconfiguredOnHost(id, host) && (
+                        {harnessUnavailableReasonOnHost(id, host) !== null && (
                           <Badge
                             variant="outline"
                             className="border-amber-300 bg-amber-50 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
@@ -2944,7 +2947,7 @@ export function NewChatLandingScreen() {
         wrappersRegistered:
           smartRoutingWrappers.claude != null && smartRoutingWrappers.codex != null,
         unreadyHarnesses: SMART_ROUTING_ARMS.filter((harness) =>
-          harnessUnconfiguredOnHost(harness, harnessWarningHost),
+          harnessUnavailableReasonOnHost(harness, harnessWarningHost) !== null,
         ),
         // Picking the harness is the external router's job alone, so the row
         // needs it configured AND both families on the gateway its apply layer
@@ -3734,11 +3737,13 @@ export function NewChatLandingScreen() {
             // server stamps the routed wrapper's labels once it has rebound.
             labels: smartRoutingHarnessSelected ? undefined : createLabels,
             // Permission / approval / cursor mode → CLI flag pair, persisted as
-            // terminal_launch_args. Omitted for the default and non-native agents.
+            // terminal_launch_args. Only the literal "default" is omitted
+            // (Claude's own no-flag mode); every other pick — including the
+            // shipped default "auto" — must be sent explicitly, or Claude
+            // falls back to prompting.
             terminal_launch_args: smartRoutingHarnessSelected
               ? undefined
-              : agentSupportsPermissionMode &&
-                  permissionMode !== CLAUDE_NATIVE_DEFAULT_PERMISSION_MODE
+              : agentSupportsPermissionMode && permissionMode !== "default"
                 ? ["--permission-mode", permissionMode]
                 : agentSupportsApprovalMode && approvalMode !== CODEX_NATIVE_DEFAULT_APPROVAL_MODE
                   ? (CODEX_NATIVE_APPROVAL_MODES.find((m) => m.value === approvalMode)?.args ?? [])

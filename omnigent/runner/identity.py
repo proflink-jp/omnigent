@@ -50,6 +50,27 @@ OMNIGENT_INTERNAL_WS_ORIGIN = "omnigent://internal"
 # CLI flows leave it unset (agent sees the project root directly).
 RUNNER_ISOLATE_SESSION_ENV_VAR = "OMNIGENT_RUNNER_ISOLATE_SESSION"
 
+
+def with_internal_origin(headers: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Return request headers with the first-party ``Origin`` sentinel set.
+
+    Host, runner, and native-harness hook subprocesses are non-browser
+    clients. On prof dev-env VMs, :class:`~omnigent.server.prof_auth.ProfNonceMiddleware`
+    rejects any request that lacks either a browser session cookie or
+    ``Origin: omnigent://internal``. Policy evaluate / permission hooks
+    must carry this Origin or every ``UserPromptSubmit`` / ``PreToolUse``
+    POST fails closed with ``401 Unauthorized``.
+
+    Does not overwrite an existing ``Origin`` (case-insensitive).
+
+    :param headers: Optional base headers (auth, workspace routing, …).
+    :returns: A new dict with ``Origin`` set when absent.
+    """
+    out: dict[str, str] = {str(k): str(v) for k, v in (headers or {}).items()}
+    if not any(key.lower() == "origin" for key in out):
+        out["Origin"] = OMNIGENT_INTERNAL_WS_ORIGIN
+    return out
+
 # Marker env var stamped into every agent-facing environment so any
 # process launched inside an Omnigent agent session can detect it is
 # running under Omnigent. This is the analog of Claude Code's

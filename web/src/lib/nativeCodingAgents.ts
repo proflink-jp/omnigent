@@ -105,7 +105,7 @@ export const NATIVE_CODING_AGENTS = [
     wrapperLabel: "pi-native-ui",
     displayName: "Pi",
     iconKind: "pi",
-    sortRank: 40,
+    sortRank: 50,
   },
   {
     key: "kiro",

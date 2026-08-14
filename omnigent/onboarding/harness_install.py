@@ -446,12 +446,11 @@ def ui_installable_harnesses() -> frozenset[str]:
             resolvable.add(name)
     return frozenset(resolvable)
 
-
 # The families whose credential the UI can WRITE (Claude/Codex/Pi). A strict
 # subset of the installable families: opencode/qwen are installable but env-auth
 # (omnigent stores no key for them), so they are NOT credential-configurable.
 # ``pi`` consumes anthropic/openai and is handled by the host store-secret
-# handler, so it's included via its own key.
+# handler, so it is included via its own key.
 _UI_CREDENTIAL_FAMILIES: frozenset[str] = frozenset({ANTHROPIC_FAMILY, OPENAI_FAMILY, PI_KEY})
 
 

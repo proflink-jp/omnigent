@@ -148,3 +148,18 @@ export function capitalizeAgentName(name: string): string {
   if (name.length === 0) return name;
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
+
+/**
+ * Explicit display labels for catalog agent slugs that should not use
+ * harness-based native labels (e.g. two claude-native agents for different
+ * Claude accounts). Keys are agent ``name`` values from GET /v1/agents.
+ */
+export const AGENT_DISPLAY_NAMES: Record<string, string> = {
+  // nessie is no longer seeded, but older deployments retain their row.
+  nessie: "Nessie",
+  polly: "Polly",
+  debby: "Debby",
+  // Prof VM baked Claude accounts (executor.config.claude_config_dir).
+  "claude-prof-yo": "Claude (Yo)",
+  "claude-prof-nana": "Claude (Nana)",
+};

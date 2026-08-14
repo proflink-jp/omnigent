@@ -49,7 +49,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ModelValueCombobox } from "@/components/ModelValueCombobox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { capitalizeAgentName } from "@/lib/agentLabels";
+import { AGENT_DISPLAY_NAMES, capitalizeAgentName } from "@/lib/agentLabels";
 import { coercePolicyParams } from "@/lib/policyParams";
 import { CLAUDE_NATIVE_MODELS } from "@/lib/claudeNativeModels";
 import { agentRootName } from "@/lib/forkHarness";
@@ -79,6 +79,8 @@ const MCP_SERVERS_UPDATED_TOAST = (
  */
 export function agentDisplayLabel(name: string): string {
   const baseName = agentRootName(name);
+  const explicit = AGENT_DISPLAY_NAMES[name] ?? AGENT_DISPLAY_NAMES[baseName];
+  if (explicit !== undefined) return explicit;
   const nativeAgent = nativeCodingAgentForAgentName(baseName);
   if (nativeAgent?.key === "claude") return "Claude";
   return nativeAgent?.displayName ?? capitalizeAgentName(baseName);

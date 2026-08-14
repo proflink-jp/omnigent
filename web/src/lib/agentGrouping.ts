@@ -24,6 +24,10 @@ export const BUILTIN_AGENTS = new Set([
   "kimi-native-ui", // Kimi
   "polly",
   "debby",
+  // Prof VM extras (OMNIGENT_BUILTIN_AGENT_DIRS) — keep in the main Agents
+  // group, not the "Custom agents" submenu.
+  "claude-prof-yo",
+  "claude-prof-nana",
 ]);
 
 // Preferred display order for the built-in group. The server returns
@@ -32,10 +36,13 @@ export const BUILTIN_AGENTS = new Set([
 // after, in server order.
 export const AGENT_DISPLAY_ORDER = [
   "Claude Code",
+  "Claude (Yo)",
+  "Claude (Nana)",
   "Codex",
   "OpenCode",
   "Cursor",
   "Pi",
+  "OMP",
   "Kiro",
   "Antigravity",
   "Qwen Code",
