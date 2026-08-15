@@ -249,18 +249,19 @@ RUN git config --system credential.helper \
 # Optional dev-stack tooling for code-review/test loops inside the sandbox.
 # Off by default — the published host image stays lean for Modal /
 # OpenShell / etc. Opt in with --build-arg HOST_DEV_TOOLS=1 (the prof VM
-# does via its compose build args): installs make (repo build entry points)
-# and a pinned Go toolchain at /usr/local/go so agents can go build/test
-# repos without host bind mounts. sha256 pinning matches the kiro-cli /
-# agy pattern: a wrong sum fails the build. GO_VERSION tracks the Go
-# release the consumer repos require; bump it + both sums together.
+# does via its compose build args): installs make + jq (repo build entry
+# points and seed/JSON scripts) and a pinned Go toolchain at /usr/local/go
+# so agents can go build/test repos without host bind mounts. sha256
+# pinning matches the kiro-cli / agy pattern: a wrong sum fails the build.
+# GO_VERSION tracks the Go release the consumer repos require; bump it +
+# both sums together.
 ARG HOST_DEV_TOOLS=
 ARG GO_VERSION=1.25.13
 ARG GO_SHA256_AMD64=39042a078ea9ceebe3ecda4a7188f0f5b96e14a071d27923ba7f40b456e85ae3
 ARG GO_SHA256_ARM64=adad240fcb6bd180cf973b4b7c747baf4ec81d08b7d40ca35940ee4531971490
 RUN if [ -n "${HOST_DEV_TOOLS}" ]; then \
       set -eu; \
-      apt-get update && apt-get install -y --no-install-recommends make \
+      apt-get update && apt-get install -y --no-install-recommends make jq \
       && rm -rf /var/lib/apt/lists/*; \
       case "$(dpkg --print-architecture)" in \
         amd64) goarch=amd64; gosum="$GO_SHA256_AMD64" ;; \
@@ -295,6 +296,29 @@ RUN if [ -n "${HOST_DEV_TOOLS}" ]; then \
       install -m 0755 "/tmp/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-${larch}/golangci-lint" /usr/local/bin/golangci-lint; \
       rm -rf /tmp/golangci-lint.tgz "/tmp/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-${larch}"; \
       golangci-lint --version; \
+    fi
+
+# gh joins the HOST_DEV_TOOLS set for PR work (pr create/view/checks) —
+# the official release binary is statically linked, so a pinned tarball
+# beats both the apt repo and host bind mounts (no glibc skew across
+# sandbox images). Sandbox agents auth via GH_TOKEN from the boot-agent's
+# installation_token cache; no credentials are baked in.
+ARG GH_VERSION=2.95.0
+ARG GH_SHA256_AMD64=25d1e4729e8808c9ed3d613e96ebd3f3e44446f2d368c89d878a71a36ddb3d8c
+ARG GH_SHA256_ARM64=d41e0b3b6218e5741c8bb4db39b16e53a59e0e06299a8489bd38f623ef7ebaae
+RUN if [ -n "${HOST_DEV_TOOLS}" ]; then \
+      set -eu; \
+      case "$(dpkg --print-architecture)" in \
+        amd64) garch=amd64; gsum="$GH_SHA256_AMD64" ;; \
+        arm64) garch=arm64; gsum="$GH_SHA256_ARM64" ;; \
+        *) echo "ERROR: unsupported arch for gh" >&2; exit 1 ;; \
+      esac; \
+      curl -fsSL -o /tmp/gh.tgz "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${garch}.tar.gz"; \
+      echo "${gsum}  /tmp/gh.tgz" | sha256sum -c -; \
+      tar -xzf /tmp/gh.tgz -C /tmp "gh_${GH_VERSION}_linux_${garch}/bin/gh"; \
+      install -m 0755 "/tmp/gh_${GH_VERSION}_linux_${garch}/bin/gh" /usr/local/bin/gh; \
+      rm -rf /tmp/gh.tgz "/tmp/gh_${GH_VERSION}_linux_${garch}"; \
+      gh --version | head -n1; \
     fi
 
 # Node runtime for the harness CLIs, copied from the official image
