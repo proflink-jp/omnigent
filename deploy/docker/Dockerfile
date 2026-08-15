@@ -275,6 +275,28 @@ RUN if [ -n "${HOST_DEV_TOOLS}" ]; then \
       install -d -o "${AGENT_UID}" -g "${AGENT_GID}" /go; \
     fi
 
+# golangci-lint joins the HOST_DEV_TOOLS set (the prof Makefile's lint/fmt
+# targets shell out to it). Separate RUN so hosts that already built the
+# Go layer reuse it from cache. Pinned like the tools above; version
+# tracks what the consumer repos' CI runs (their .golangci.yml is v2).
+ARG GOLANGCI_LINT_VERSION=2.12.2
+ARG GOLANGCI_LINT_SHA256_AMD64=8df580d2670fed8fa984aac0507099af8df275e665215f5c7a2ae3943893a553
+ARG GOLANGCI_LINT_SHA256_ARM64=44cd40a8c76c86755375adfeea52cfd3533cb43d7bd647771e0ae065e166df3a
+RUN if [ -n "${HOST_DEV_TOOLS}" ]; then \
+      set -eu; \
+      case "$(dpkg --print-architecture)" in \
+        amd64) larch=amd64; lsum="$GOLANGCI_LINT_SHA256_AMD64" ;; \
+        arm64) larch=arm64; lsum="$GOLANGCI_LINT_SHA256_ARM64" ;; \
+        *) echo "ERROR: unsupported arch for golangci-lint" >&2; exit 1 ;; \
+      esac; \
+      curl -fsSL -o /tmp/golangci-lint.tgz "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-${larch}.tar.gz"; \
+      echo "${lsum}  /tmp/golangci-lint.tgz" | sha256sum -c -; \
+      tar -xzf /tmp/golangci-lint.tgz -C /tmp "golangci-lint-${GOLANGCI_LINT_VERSION}-linux-${larch}/golangci-lint"; \
+      install -m 0755 "/tmp/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-${larch}/golangci-lint" /usr/local/bin/golangci-lint; \
+      rm -rf /tmp/golangci-lint.tgz "/tmp/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-${larch}"; \
+      golangci-lint --version; \
+    fi
+
 # Node runtime for the harness CLIs, copied from the official image
 # (same Debian base as python-slim, so the binary is ABI-compatible)
 # rather than apt — keeps the version pinned to NODE_VERSION and skips
