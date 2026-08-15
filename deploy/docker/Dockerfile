@@ -205,9 +205,12 @@ ENV NPM_CONFIG_REGISTRY=${NPM_CONFIG_REGISTRY}
 # _RUNNER_ENV_ALLOWLIST in omnigent/host/connect.py) so the
 # claude-sdk harness can start. Only this image sets it; laptops never
 # have it.
+# /usr/local/go/bin is prepended so the optional HOST_DEV_TOOLS Go
+# toolchain is on PATH in non-login shells; when the gate is off the
+# directory simply doesn't exist (harmless).
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PATH="/opt/venv/bin:${PATH}" \
+    PATH="/opt/venv/bin:/usr/local/go/bin:${PATH}" \
     IS_SANDBOX=1
 
 RUN apt-get update \
@@ -243,6 +246,34 @@ RUN groupadd -g ${AGENT_GID} agent \
 # GIT_USERNAME=oauth2). --system so it applies to any sandbox user.
 RUN git config --system credential.helper \
       '!f() { [ "$1" = get ] || return 0; [ -n "$GIT_TOKEN" ] || return 0; printf "username=%s\npassword=%s\n" "${GIT_USERNAME:-x-access-token}" "$GIT_TOKEN"; }; f'
+# Optional dev-stack tooling for code-review/test loops inside the sandbox.
+# Off by default — the published host image stays lean for Modal /
+# OpenShell / etc. Opt in with --build-arg HOST_DEV_TOOLS=1 (the prof VM
+# does via its compose build args): installs make (repo build entry points)
+# and a pinned Go toolchain at /usr/local/go so agents can go build/test
+# repos without host bind mounts. sha256 pinning matches the kiro-cli /
+# agy pattern: a wrong sum fails the build. GO_VERSION tracks the Go
+# release the consumer repos require; bump it + both sums together.
+ARG HOST_DEV_TOOLS=
+ARG GO_VERSION=1.25.13
+ARG GO_SHA256_AMD64=39042a078ea9ceebe3ecda4a7188f0f5b96e14a071d27923ba7f40b456e85ae3
+ARG GO_SHA256_ARM64=adad240fcb6bd180cf973b4b7c747baf4ec81d08b7d40ca35940ee4531971490
+RUN if [ -n "${HOST_DEV_TOOLS}" ]; then \
+      set -eu; \
+      apt-get update && apt-get install -y --no-install-recommends make \
+      && rm -rf /var/lib/apt/lists/*; \
+      case "$(dpkg --print-architecture)" in \
+        amd64) goarch=amd64; gosum="$GO_SHA256_AMD64" ;; \
+        arm64) goarch=arm64; gosum="$GO_SHA256_ARM64" ;; \
+        *) echo "ERROR: unsupported arch for Go toolchain" >&2; exit 1 ;; \
+      esac; \
+      curl -fsSL -o /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-${goarch}.tar.gz"; \
+      echo "${gosum}  /tmp/go.tgz" | sha256sum -c -; \
+      tar -C /usr/local -xzf /tmp/go.tgz; \
+      rm -f /tmp/go.tgz; \
+      /usr/local/go/bin/go version; \
+      install -d -o "${AGENT_UID}" -g "${AGENT_GID}" /go; \
+    fi
 
 # Node runtime for the harness CLIs, copied from the official image
 # (same Debian base as python-slim, so the binary is ABI-compatible)
@@ -369,8 +400,9 @@ RUN pip install --no-cache-dir /build /build/sdks/python-client /build/sdks/ui \
 # /etc/profile unconditionally resets PATH for login shells — the ENV
 # PATH above would silently drop off and `omnigent` / `pip` would
 # resolve to the system Python instead of the venv. profile.d snippets
-# are sourced after that reset, so this puts the venv back in front.
-RUN echo 'export PATH="/opt/venv/bin:${PATH}"' > /etc/profile.d/omnigent-venv.sh
+# are sourced after that reset, so this puts the venv (and the optional
+# Go toolchain) back in front for login shells.
+RUN echo 'export PATH="/opt/venv/bin:/usr/local/go/bin:${PATH}"' > /etc/profile.d/omnigent-venv.sh
 
 WORKDIR /root
 
