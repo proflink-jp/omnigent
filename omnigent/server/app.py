@@ -613,9 +613,14 @@ def _ensure_default_native_agents(
     for agent in NATIVE_CODING_AGENTS:
         provider = native_provider_for_key(agent.key)
         if provider is None:
-            raise OmnigentError(
-                f"native coding agent {agent.key!r} has no provider row to seed from"
+            # Registered-but-unimplemented harnesses (e.g. omp before its
+            # native modules land) stay visible in the UI but get no DB row:
+            # selecting them fails at harness spawn, not at server startup.
+            _logger.warning(
+                "native coding agent %r has no provider row yet — skipping seed",
+                agent.key,
             )
+            continue
         _ensure_builtin_agent(
             agent_store,
             artifact_store,
